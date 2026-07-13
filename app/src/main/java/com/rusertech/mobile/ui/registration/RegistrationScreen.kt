@@ -35,6 +35,7 @@ fun RegistrationScreen(
             .padding(24.dp).systemBarsPadding().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         // Logo
         Image(painterResource(R.drawable.rusertech_logo), contentDescription = stringResource(R.string.app_name),
             modifier = Modifier.size(96.dp).clip(RoundedCornerShape(20.dp)))
