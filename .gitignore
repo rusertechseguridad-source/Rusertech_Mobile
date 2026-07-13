@@ -13,3 +13,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Exclude agent skills and specs
+.agents/
+RUSERTECH_MOBILE_IMPLEMENTATION_v1.1_COMPLETO.md
