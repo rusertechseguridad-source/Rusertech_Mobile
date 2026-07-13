@@ -18,25 +18,23 @@ class RegistrationViewModel @Inject constructor(
 ) : ViewModel() {
     var documentId by mutableStateOf(""); private set
     var plate by mutableStateOf(""); private set
-    var avlUserCode by mutableStateOf(""); private set
-    var apiKey by mutableStateOf(""); private set
     var documentError by mutableStateOf<String?>(null); private set
     var plateError by mutableStateOf<String?>(null); private set
+    var networkError by mutableStateOf<String?>(null); private set
     var isLoading by mutableStateOf(false); private set
 
-    val isValid: Boolean get() = IdentityValidator.isValid(documentId) &&
-        PlateValidator.isValid(plate) && avlUserCode.isNotBlank() && apiKey.isNotBlank()
+    val isValid: Boolean get() = IdentityValidator.isValid(documentId) && PlateValidator.isValid(plate)
 
     fun onDocumentChange(input: String) {
         documentId = input.take(20)
         documentError = if (documentId.isNotEmpty()) IdentityValidator.errorOrNull(documentId) else null
+        networkError = null
     }
     fun onPlateChange(input: String) {
         plate = input.uppercase().take(10)
         plateError = if (plate.isNotEmpty()) PlateValidator.errorOrNull(plate) else null
+        networkError = null
     }
-    fun onAvlCodeChange(input: String) { avlUserCode = input.trim().take(50) }
-    fun onApiKeyChange(input: String) { apiKey = input.trim().take(200) }
 
     fun save(onDone: () -> Unit) {
         documentError = IdentityValidator.errorOrNull(documentId)
@@ -44,12 +42,16 @@ class RegistrationViewModel @Inject constructor(
         if (documentError != null || plateError != null) return
         viewModelScope.launch {
             isLoading = true
-            userRepository.saveIdentity(
-                IdentityValidator.normalize(documentId), PlateValidator.normalize(plate),
-                avlUserCode, apiKey
+            networkError = null
+            val result = userRepository.login(
+                IdentityValidator.normalize(documentId), PlateValidator.normalize(plate)
             )
             isLoading = false
-            onDone()
+            if (result.isSuccess) {
+                onDone()
+            } else {
+                networkError = "Error de conexión o datos incorrectos"
+            }
         }
     }
 }

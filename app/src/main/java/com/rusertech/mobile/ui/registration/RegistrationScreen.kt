@@ -37,11 +37,8 @@ fun RegistrationScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Logo
-        Box(modifier = Modifier.size(96.dp).clip(RoundedCornerShape(20.dp)).background(techGlowGradient()),
-            contentAlignment = Alignment.Center) {
-            Image(painterResource(R.drawable.rusertech_logo), contentDescription = stringResource(R.string.app_name),
-                modifier = Modifier.size(72.dp))
-        }
+        Image(painterResource(R.drawable.rusertech_logo_horizontal), contentDescription = stringResource(R.string.app_name),
+            modifier = Modifier.height(72.dp))
         Spacer(Modifier.height(20.dp))
         Text(stringResource(R.string.app_name), fontSize = 24.sp, fontWeight = FontWeight.W500, color = TextPrimary)
         Text(stringResource(R.string.app_tagline), fontSize = 13.sp, color = TextSecondary)
@@ -56,19 +53,11 @@ fun RegistrationScreen(
             stringResource(R.string.register_plate_label), stringResource(R.string.register_plate_placeholder),
             error = viewModel.plateError, capitalization = KeyboardCapitalization.Characters)
 
-        Spacer(Modifier.height(20.dp))
-        Text("Configuración de flota", fontSize = 13.sp, fontWeight = FontWeight.W500, color = TextSecondary)
-        Text("Estos datos los provee el operador desde el panel web", fontSize = 11.sp, color = TextMuted)
-        Spacer(Modifier.height(8.dp))
-
-        // Campos de configuración de flota (provistos por el operador)
-        RusertechTextField(viewModel.avlUserCode, viewModel::onAvlCodeChange,
-            "Código AVL", "Código del dispositivo mobile")
-        Spacer(Modifier.height(12.dp))
-        RusertechTextField(viewModel.apiKey, viewModel::onApiKeyChange,
-            "API Key", "Clave de autenticación")
-
         Spacer(Modifier.height(28.dp))
+        if (viewModel.networkError != null) {
+            Text(viewModel.networkError!!, color = SOSRed, fontSize = 13.sp, fontWeight = FontWeight.W500)
+            Spacer(Modifier.height(16.dp))
+        }
         GradientButton(stringResource(R.string.register_save), viewModel.isValid, viewModel.isLoading) {
             viewModel.save(onRegistered)
         }
