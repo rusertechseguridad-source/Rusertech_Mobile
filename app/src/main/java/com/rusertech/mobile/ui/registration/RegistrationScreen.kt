@@ -52,6 +52,10 @@ fun RegistrationScreen(
         RusertechTextField(viewModel.plate, viewModel::onPlateChange,
             stringResource(R.string.register_plate_label), stringResource(R.string.register_plate_placeholder),
             error = viewModel.plateError, capitalization = KeyboardCapitalization.Characters)
+        Spacer(Modifier.height(12.dp))
+        RusertechTextField(viewModel.activationCode, viewModel::onActivationCodeChange,
+            "Código de activación", "PIN provisto por el operador",
+            error = viewModel.activationError, keyboardType = KeyboardType.Text, capitalization = KeyboardCapitalization.Characters)
 
         Spacer(Modifier.height(28.dp))
         if (viewModel.networkError != null) {

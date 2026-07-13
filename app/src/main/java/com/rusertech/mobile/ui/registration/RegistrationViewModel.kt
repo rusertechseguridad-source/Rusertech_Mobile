@@ -18,12 +18,14 @@ class RegistrationViewModel @Inject constructor(
 ) : ViewModel() {
     var documentId by mutableStateOf(""); private set
     var plate by mutableStateOf(""); private set
+    var activationCode by mutableStateOf(""); private set
     var documentError by mutableStateOf<String?>(null); private set
     var plateError by mutableStateOf<String?>(null); private set
+    var activationError by mutableStateOf<String?>(null); private set
     var networkError by mutableStateOf<String?>(null); private set
     var isLoading by mutableStateOf(false); private set
 
-    val isValid: Boolean get() = IdentityValidator.isValid(documentId) && PlateValidator.isValid(plate)
+    val isValid: Boolean get() = IdentityValidator.isValid(documentId) && PlateValidator.isValid(plate) && activationCode.length >= 4
 
     fun onDocumentChange(input: String) {
         documentId = input.take(20)
@@ -35,16 +37,22 @@ class RegistrationViewModel @Inject constructor(
         plateError = if (plate.isNotEmpty()) PlateValidator.errorOrNull(plate) else null
         networkError = null
     }
+    fun onActivationCodeChange(input: String) {
+        activationCode = input.uppercase().take(15)
+        activationError = if (activationCode.length < 4) "Código inválido" else null
+        networkError = null
+    }
 
     fun save(onDone: () -> Unit) {
         documentError = IdentityValidator.errorOrNull(documentId)
         plateError = PlateValidator.errorOrNull(plate)
-        if (documentError != null || plateError != null) return
+        activationError = if (activationCode.length < 4) "Requerido" else null
+        if (documentError != null || plateError != null || activationError != null) return
         viewModelScope.launch {
             isLoading = true
             networkError = null
             val result = userRepository.login(
-                IdentityValidator.normalize(documentId), PlateValidator.normalize(plate)
+                IdentityValidator.normalize(documentId), PlateValidator.normalize(plate), activationCode
             )
             isLoading = false
             if (result.isSuccess) {

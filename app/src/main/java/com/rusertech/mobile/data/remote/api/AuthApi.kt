@@ -7,7 +7,8 @@ import retrofit2.http.POST
 @Serializable
 data class LoginRequest(
     val documentId: String,
-    val plate: String
+    val plate: String,
+    val activationCode: String
 )
 
 @Serializable

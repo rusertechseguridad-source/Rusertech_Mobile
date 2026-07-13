@@ -18,9 +18,9 @@ class UserRepository @Inject constructor(
         prefs.saveIdentity(documentId, plate, avlUserCode, apiKey)
     }
 
-    suspend fun login(documentId: String, plate: String): Result<Unit> = try {
+    suspend fun login(documentId: String, plate: String, activationCode: String): Result<Unit> = try {
         // TODO: Revertir esto cuando el equipo Web implemente el endpoint POST /api/v1/mobile/login
-        // val response = authApi.login(com.rusertech.mobile.data.remote.api.LoginRequest(documentId, plate))
+        // val response = authApi.login(com.rusertech.mobile.data.remote.api.LoginRequest(documentId, plate, activationCode))
         // saveIdentity(documentId, plate, response.avlUserCode, response.apiKey)
         
         // --- MOCK PARA TESTING EN EMULADOR ---
