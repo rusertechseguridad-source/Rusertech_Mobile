@@ -39,10 +39,7 @@ fun RegistrationScreen(
         // Logo
         Image(painterResource(R.drawable.rusertech_logo_horizontal), contentDescription = stringResource(R.string.app_name),
             modifier = Modifier.height(72.dp))
-        Spacer(Modifier.height(20.dp))
-        Text(stringResource(R.string.app_name), fontSize = 24.sp, fontWeight = FontWeight.W500, color = TextPrimary)
-        Text(stringResource(R.string.app_tagline), fontSize = 13.sp, color = TextSecondary)
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(32.dp))
 
         // Campos del conductor
         RusertechTextField(viewModel.documentId, viewModel::onDocumentChange,

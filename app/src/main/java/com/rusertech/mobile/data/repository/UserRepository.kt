@@ -19,8 +19,17 @@ class UserRepository @Inject constructor(
     }
 
     suspend fun login(documentId: String, plate: String): Result<Unit> = try {
-        val response = authApi.login(com.rusertech.mobile.data.remote.api.LoginRequest(documentId, plate))
-        saveIdentity(documentId, plate, response.avlUserCode, response.apiKey)
+        // TODO: Revertir esto cuando el equipo Web implemente el endpoint POST /api/v1/mobile/login
+        // val response = authApi.login(com.rusertech.mobile.data.remote.api.LoginRequest(documentId, plate))
+        // saveIdentity(documentId, plate, response.avlUserCode, response.apiKey)
+        
+        // --- MOCK PARA TESTING EN EMULADOR ---
+        kotlinx.coroutines.delay(1000) // Simular latencia de red
+        val mockAvlUser = "MockFlotaAVL"
+        val mockApiKey = "mock_api_key_12345"
+        saveIdentity(documentId, plate, mockAvlUser, mockApiKey)
+        // -------------------------------------
+        
         Result.success(Unit)
     } catch (e: Exception) {
         Result.failure(e)
