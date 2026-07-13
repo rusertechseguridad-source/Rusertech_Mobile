@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.RusertechMobile" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/deep_space_top</item>
+        <item name="android:navigationBarColor">@color/deep_space_bottom</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
