@@ -9,7 +9,7 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [LocationEntity::class, EventEntity::class, AttachmentEntity::class],
     version = 2,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun locationDao(): LocationDao

@@ -21,17 +21,5 @@ private val RusertechColors = darkColorScheme(
 
 @Composable
 fun RusertechTheme(content: @Composable () -> Unit) {
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as Activity).window
-            @Suppress("DEPRECATION")
-            window.statusBarColor = DeepSpaceTop.toArgb()
-            @Suppress("DEPRECATION")
-            window.navigationBarColor = DeepSpaceBottom.toArgb()
-            @Suppress("DEPRECATION")
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
-        }
-    }
     MaterialTheme(colorScheme = RusertechColors, typography = RusertechTypography, content = content)
 }
