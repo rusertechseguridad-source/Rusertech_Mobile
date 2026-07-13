@@ -42,7 +42,7 @@ class EventsViewModel @Inject constructor(
 
     fun fireEvent(type: EventType) {
         viewModelScope.launch {
-            val identity = userIdentity.value ?: return@launch
+            val identity = userRepository.userIdentity.firstOrNull() ?: return@launch
             val location = TrackingService.lastLocation.value
             eventRepository.createEvent(type, identity, location?.latitude ?: 0.0, location?.longitude ?: 0.0)
             _feedback.value = type.displayName; delay(3000); _feedback.value = null
@@ -52,7 +52,7 @@ class EventsViewModel @Inject constructor(
     fun fireSOS() {
         triggerVibration()
         viewModelScope.launch {
-            val identity = userIdentity.value ?: return@launch
+            val identity = userRepository.userIdentity.firstOrNull() ?: return@launch
             val location = TrackingService.lastLocation.value
             eventRepository.createEvent(EventType.SOS, identity, location?.latitude ?: 0.0, location?.longitude ?: 0.0,
                 metadata = mapOf("battery" to BatteryUtil.getLevel(context).toString(),

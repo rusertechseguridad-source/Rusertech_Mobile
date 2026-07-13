@@ -46,6 +46,17 @@ fun TrackingScreen(
     val context = LocalContext.current
     val battery = remember { BatteryUtil.getLevel(context) }
 
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val locGranted = permissions.getOrDefault(android.Manifest.permission.ACCESS_FINE_LOCATION, false) ||
+                         permissions.getOrDefault(android.Manifest.permission.ACCESS_COARSE_LOCATION, false)
+        // Se requiere location sí o sí para iniciar el servicio, las notificaciones en Tiramisu+
+        if (locGranted) {
+            viewModel.startTracking()
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().background(deepSpaceGradient()).padding(20.dp).systemBarsPadding(),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -85,7 +96,7 @@ fun TrackingScreen(
                 StatusBadge(if (isTracking) stringResource(R.string.tracking_active) else stringResource(R.string.tracking_stopped),
                     if (isTracking) SuccessGreen else TextMuted)
                 Spacer(Modifier.width(8.dp))
-                IconButton(onClick = onLogout) { Icon(Icons.Default.ExitToApp, "Salir", tint = TextSecondary) }
+                IconButton(onClick = onLogout) { Icon(Icons.AutoMirrored.Filled.ExitToApp, "Salir", tint = TextSecondary) }
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -156,7 +167,18 @@ fun TrackingScreen(
                 }
             )
             .clickable(enabled = !accessRevoked) {
-                if (isTracking) viewModel.stopTracking() else viewModel.startTracking()
+                if (isTracking) {
+                    viewModel.stopTracking()
+                } else {
+                    val permissions = mutableListOf(
+                        android.Manifest.permission.ACCESS_FINE_LOCATION,
+                        android.Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    permissionLauncher.launch(permissions.toTypedArray())
+                }
             },
             contentAlignment = Alignment.Center) {
             Text(
