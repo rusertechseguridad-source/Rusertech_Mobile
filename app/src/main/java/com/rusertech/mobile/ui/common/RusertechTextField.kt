@@ -24,6 +24,8 @@ fun RusertechTextField(
     label: String, placeholder: String, error: String? = null,
     keyboardType: KeyboardType = KeyboardType.Text,
     capitalization: KeyboardCapitalization = KeyboardCapitalization.None,
+    singleLine: Boolean = true,
+    maxLines: Int = 1,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -36,7 +38,7 @@ fun RusertechTextField(
                 .border(0.5.dp, if (error != null) SOSRed else SurfaceBorder, RoundedCornerShape(10.dp))
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             textStyle = TextStyle(fontSize = 15.sp, color = TextPrimary, fontWeight = FontWeight.Normal),
-            cursorBrush = SolidColor(TechGlowCyan), singleLine = true,
+            cursorBrush = SolidColor(TechGlowCyan), singleLine = singleLine, maxLines = maxLines,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType, capitalization = capitalization),
             decorationBox = { inner -> if (value.isEmpty()) Text(placeholder, fontSize = 15.sp, color = TextMuted); inner() }
         )
