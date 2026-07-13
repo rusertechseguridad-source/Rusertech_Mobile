@@ -55,7 +55,7 @@ fun RegistrationScreen(
         Spacer(Modifier.height(12.dp))
         RusertechTextField(viewModel.activationCode, viewModel::onActivationCodeChange,
             "Código de activación", "PIN provisto por el operador",
-            error = viewModel.activationError, keyboardType = KeyboardType.Text, capitalization = KeyboardCapitalization.Characters,
+            error = viewModel.activationError, keyboardType = KeyboardType.Text,
             singleLine = false, maxLines = 3)
 
         Spacer(Modifier.height(28.dp))
