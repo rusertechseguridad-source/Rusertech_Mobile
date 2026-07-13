@@ -14,23 +14,18 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class HubRawPayload(
-    @SerialName("Asset") val asset: String,                     // = plate
-    @SerialName("User_avl") val userAvl: String,                // = avlUserCode
-    @SerialName("Date") val date: String,                       // ISO 8601
-    @SerialName("Latitude") val latitude: String,
-    @SerialName("Longitude") val longitude: String,
-    @SerialName("Speed") val speed: String,
-    @SerialName("Course") val course: String? = null,           // heading en grados
-    @SerialName("Code") val code: String? = null,               // evento mobile o null
-    @SerialName("Ignition") val ignition: String? = null,
-    @SerialName("Altitude") val altitude: String? = null,
-    @SerialName("Odometer") val odometer: String? = null,
-    @SerialName("Battery") val battery: String? = null,
-    @SerialName("Temperature") val temperature: String? = null,
-    @SerialName("Humidity") val humidity: String? = null,
-    @SerialName("Direction") val direction: String? = null,
-    @SerialName("SerialNumber") val serialNumber: String? = null,
-    @SerialName("Shipment") val shipment: String? = null,       // metadata JSON del evento
-    @SerialName("SourceTag") val sourceTag: String? = "mobile_app",
-    @SerialName("Alert") val alert: String? = null
+    @SerialName("User_avl") val userAvl: String,
+    @SerialName("Asset") val asset: String,
+    @SerialName("MobileCode") val mobileCode: String,
+    @SerialName("DriverDNI") val driverDni: String,
+    @SerialName("Latitude") val latitude: Double,
+    @SerialName("Longitude") val longitude: Double,
+    @SerialName("Date") val date: String,
+    @SerialName("Speed") val speed: Double,
+    @SerialName("Course") val course: Double? = null,
+    @SerialName("Ignition") val ignition: Int? = null,
+    @SerialName("Battery") val battery: Int? = null,
+    // Campos extra para que el backend reconozca eventos mobile (opcionales)
+    @SerialName("Code") val code: String? = null,
+    @SerialName("Shipment") val shipment: String? = null
 )

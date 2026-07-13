@@ -78,16 +78,20 @@ class EventRepository @Inject constructor(
 
     /** Convierte un EventEntity al formato HubRawPayload con el Code del evento. */
     private fun EventEntity.toHubPayload(identity: UserIdentity) = HubRawPayload(
-        asset = identity.plate,
         userAvl = identity.avlUserCode,
+        asset = identity.plate,
+        mobileCode = identity.activationCode,
+        driverDni = identity.documentId,
+        latitude = latitude,
+        longitude = longitude,
         date = Instant.ofEpochMilli(timestamp)
             .atOffset(ZoneOffset.UTC)
             .format(DateTimeFormatter.ISO_INSTANT),
-        latitude = latitude.toString(),
-        longitude = longitude.toString(),
-        speed = "0",
+        speed = 0.0,
+        course = 0.0,
+        ignition = 1,
+        battery = null,
         code = type,  // MOB_SOS, MOB_CHKPT, MOB_COMM, MOB_INCIDENT, etc.
-        shipment = if (notes.isNotBlank()) notes else null,  // Notas van en Shipment
-        sourceTag = "mobile_app"
+        shipment = if (notes.isNotBlank()) notes else null  // Notas van en Shipment
     )
 }

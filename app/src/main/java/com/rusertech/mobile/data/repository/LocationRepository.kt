@@ -63,18 +63,20 @@ class LocationRepository @Inject constructor(
 
     /** Convierte una LocationEntity al formato HubRawPayload del backend web. */
     private fun LocationEntity.toHubPayload(identity: UserIdentity) = HubRawPayload(
-        asset = identity.plate,
         userAvl = identity.avlUserCode,
+        asset = identity.plate,
+        mobileCode = identity.activationCode,
+        driverDni = identity.documentId,
+        latitude = latitude,
+        longitude = longitude,
         date = Instant.ofEpochMilli(timestamp)
             .atOffset(ZoneOffset.UTC)
             .format(DateTimeFormatter.ISO_INSTANT),
-        latitude = latitude.toString(),
-        longitude = longitude.toString(),
-        speed = (speed * 3.6f).toString(),  // m/s → km/h para el backend
-        course = heading.toInt().toString(),
+        speed = (speed * 3.6f).toDouble(),  // m/s → km/h para el backend
+        course = heading.toDouble(),
+        ignition = if (speed > 0) 1 else 0,
+        battery = battery,
         code = null,  // Sin evento — es telemetría pura
-        battery = battery.toString(),
-        altitude = altitude.toString(),
-        sourceTag = "mobile_app"
+        shipment = null
     )
 }

@@ -10,6 +10,7 @@ package com.rusertech.mobile.domain.model
 data class UserIdentity(
     val documentId: String,
     val plate: String,
+    val activationCode: String = "",
     val avlUserCode: String = "",
     val apiKey: String = ""
 )

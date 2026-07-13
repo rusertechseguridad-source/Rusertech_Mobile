@@ -22,6 +22,7 @@ class UserPreferences @Inject constructor(
     private object Keys {
         val DOCUMENT_ID = stringPreferencesKey("document_id")
         val PLATE = stringPreferencesKey("plate")
+        val ACTIVATION_CODE = stringPreferencesKey("activation_code")
         val AVL_USER_CODE = stringPreferencesKey("avl_user_code")
         val API_KEY = stringPreferencesKey("api_key")
         val IS_TRACKING = booleanPreferencesKey("is_tracking")
@@ -30,20 +31,22 @@ class UserPreferences @Inject constructor(
     val userIdentity: Flow<UserIdentity?> = context.dataStore.data.map { prefs ->
         val doc = prefs[Keys.DOCUMENT_ID]
         val plate = prefs[Keys.PLATE]
+        val actCode = prefs[Keys.ACTIVATION_CODE] ?: ""
         val avlCode = prefs[Keys.AVL_USER_CODE] ?: ""
         val apiKey = prefs[Keys.API_KEY] ?: ""
         if (!doc.isNullOrBlank() && !plate.isNullOrBlank())
-            UserIdentity(doc, plate, avlCode, apiKey) else null
+            UserIdentity(doc, plate, actCode, avlCode, apiKey) else null
     }
 
     val isTracking: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[Keys.IS_TRACKING] ?: false
     }
 
-    suspend fun saveIdentity(documentId: String, plate: String, avlUserCode: String, apiKey: String) {
+    suspend fun saveIdentity(documentId: String, plate: String, activationCode: String, avlUserCode: String, apiKey: String) {
         context.dataStore.edit { prefs ->
             prefs[Keys.DOCUMENT_ID] = documentId.trim()
             prefs[Keys.PLATE] = plate.trim().uppercase()
+            prefs[Keys.ACTIVATION_CODE] = activationCode.trim().uppercase()
             prefs[Keys.AVL_USER_CODE] = avlUserCode.trim()
             prefs[Keys.API_KEY] = apiKey.trim()
         }
