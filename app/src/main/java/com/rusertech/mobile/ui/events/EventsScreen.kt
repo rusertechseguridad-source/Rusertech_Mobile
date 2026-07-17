@@ -76,15 +76,15 @@ fun EventsScreen(onBack: () -> Unit, viewModel: EventsViewModel = hiltViewModel(
         // Historial
         Card(Modifier.fillMaxWidth().weight(1f), colors = CardDefaults.cardColors(containerColor = SurfaceCard),
             shape = RoundedCornerShape(14.dp), border = BorderStroke(0.5.dp, SurfaceBorder)) {
-            Column(Modifier.padding(14.dp)) {
+            Column(Modifier.padding(14.dp).fillMaxSize()) {
                 Text(stringResource(R.string.events_recent_history), fontSize = 13.sp, fontWeight = FontWeight.W500, color = TextSecondary)
                 Spacer(Modifier.height(8.dp))
                 if (recentEvents.isEmpty()) {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(stringResource(R.string.events_no_events), fontSize = 14.sp, color = TextMuted)
                     }
                 } else {
-                    LazyColumn { items(recentEvents, key = { it.id }) { event ->
+                    LazyColumn(Modifier.weight(1f).fillMaxWidth()) { items(recentEvents, key = { it.id }) { event ->
                         EventRow(event)
                         if (event != recentEvents.last()) HorizontalDivider(thickness = 0.5.dp, color = SurfaceBorder)
                     } }
@@ -111,12 +111,13 @@ fun EventsScreen(onBack: () -> Unit, viewModel: EventsViewModel = hiltViewModel(
         "MOB_INCIDENT" -> WarningAmber; "MOB_LOWBAT" -> WarningAmber; "MOB_STOP" -> TextMuted
         else -> TextSecondary
     }
-    val timeStr = remember(event.timestamp) { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(event.timestamp)) }
+    val timeStr = remember(event.timestamp) { SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault()).format(Date(event.timestamp)) }
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(Modifier.size(8.dp).background(dotColor, CircleShape))
         Column(Modifier.weight(1f)) {
-            Text(EventType.fromCode(event.type)?.displayName ?: event.type, fontSize = 13.sp, fontWeight = FontWeight.W500, color = TextPrimary)
-            Text("$timeStr · ${"%.4f".format(event.latitude)}, ${"%.4f".format(event.longitude)}", fontSize = 11.sp, color = TextMuted)
+            Text(EventType.fromCode(event.type)?.displayName ?: event.type, fontSize = 14.sp, fontWeight = FontWeight.W600, color = TextPrimary)
+            Spacer(Modifier.height(4.dp))
+            Text("$timeStr · ${"%.4f".format(event.latitude)}, ${"%.4f".format(event.longitude)}", fontSize = 12.sp, color = TextSecondary)
         }
         if (!event.isSynced) Box(Modifier.size(6.dp).background(WarningAmber, CircleShape))
     }

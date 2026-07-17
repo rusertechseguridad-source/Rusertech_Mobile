@@ -27,5 +27,7 @@ data class HubRawPayload(
     @SerialName("Battery") val battery: Int? = null,
     // Campos extra para que el backend reconozca eventos mobile (opcionales)
     @SerialName("Code") val code: String? = null,
-    @SerialName("Shipment") val shipment: String? = null
+    @SerialName("Shipment") val shipment: String? = null,
+    // Campo para vincular con un viaje en Modo 1 (null en Modo 2)
+    @SerialName("TripId") val tripId: String? = null
 )

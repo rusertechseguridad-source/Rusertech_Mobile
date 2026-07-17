@@ -8,6 +8,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -40,7 +41,12 @@ fun RusertechTextField(
             textStyle = TextStyle(fontSize = 15.sp, color = TextPrimary, fontWeight = FontWeight.Normal),
             cursorBrush = SolidColor(TechGlowCyan), singleLine = singleLine, maxLines = maxLines,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType, capitalization = capitalization),
-            decorationBox = { inner -> if (value.isEmpty()) Text(placeholder, fontSize = 15.sp, color = TextMuted); inner() }
+            decorationBox = { inner -> 
+                Box(contentAlignment = Alignment.CenterStart) {
+                    if (value.isEmpty()) Text(placeholder, fontSize = 15.sp, color = TextMuted)
+                    inner()
+                }
+            }
         )
         if (error != null) { Spacer(Modifier.height(4.dp)); Text(error, fontSize = 11.sp, color = SOSRed) }
     }

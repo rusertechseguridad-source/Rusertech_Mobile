@@ -25,6 +25,7 @@ data class TrackingEvent(
     val latitude: Double,
     val longitude: Double,
     val timestamp: Long,
+    val tripId: String? = null,
     val notes: String = "",
     val metadata: Map<String, String> = emptyMap()
 )

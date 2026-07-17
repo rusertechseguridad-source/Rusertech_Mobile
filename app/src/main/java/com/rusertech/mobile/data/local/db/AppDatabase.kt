@@ -8,7 +8,7 @@ import androidx.room.RoomDatabase
 // Migration real en vez de subir el número directamente (ver Sección 25).
 @Database(
     entities = [LocationEntity::class, EventEntity::class, AttachmentEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

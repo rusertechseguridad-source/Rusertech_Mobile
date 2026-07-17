@@ -16,23 +16,43 @@ fun RusertechNavHost(navController: NavHostController = rememberNavController())
     NavHost(navController, startDestination = "splash") {
         composable("splash") {
             SplashRoute(
-                onRegistered = { navController.navigate("tracking") { popUpTo("splash") { inclusive = true } } },
+                onRegistered = {}, // Unused
+                onNavigateToTracking = { navController.navigate("tracking") { popUpTo("splash") { inclusive = true } } },
+                onNavigateToModeSelection = { navController.navigate("mode_selection") { popUpTo("splash") { inclusive = true } } },
                 onNeedsRegistration = { navController.navigate("registration") { popUpTo("splash") { inclusive = true } } }
             )
         }
         composable("registration") {
-            RegistrationScreen(onRegistered = {
-                navController.navigate("tracking") { popUpTo("registration") { inclusive = true } }
-            })
+            RegistrationScreen(
+                onRegistered = { navController.navigate("mode_selection") { popUpTo("registration") { inclusive = true } } },
+                onNavigateToDebug = { navController.navigate("debug_mock") }
+            )
+        }
+        composable("debug_mock") {
+            com.rusertech.mobile.ui.debug.DebugMockScreen(onBack = { navController.popBackStack() })
+        }
+        composable("mode_selection") {
+            com.rusertech.mobile.ui.mode.ModeSelectionScreen(
+                onNavigateToFreeTracking = { navController.navigate("tracking") { popUpTo("mode_selection") { inclusive = true } } },
+                onNavigateToCreateTrip = { navController.navigate("create_trip") }
+            )
+        }
+        composable("create_trip") {
+            com.rusertech.mobile.ui.mode.CreateTripScreen(
+                onTripCreated = { navController.navigate("tracking") { popUpTo("mode_selection") { inclusive = true } } },
+                onBack = { navController.popBackStack() }
+            )
         }
         composable("tracking") {
             TrackingScreen(
                 onLogout = { navController.navigate("registration") { popUpTo("tracking") { inclusive = true } } },
                 onNavigateToEvents = { navController.navigate("events") },
-                onNavigateToAttachments = { navController.navigate("attachments") }  // Sección 29
+                onNavigateToAttachments = { navController.navigate("attachments") },
+                onNavigateToMap = { navController.navigate("map") }
             )
         }
         composable("events") { EventsScreen(onBack = { navController.popBackStack() }) }
-        composable("attachments") { AttachmentsScreen(onBack = { navController.popBackStack() }) }  // Sección 29
+        composable("attachments") { AttachmentsScreen(onBack = { navController.popBackStack() }) }
+        composable("map") { com.rusertech.mobile.ui.map.MapScreen(onBack = { navController.popBackStack() }) }
     }
 }

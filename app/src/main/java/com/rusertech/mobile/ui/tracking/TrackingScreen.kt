@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
@@ -34,6 +35,7 @@ import com.rusertech.mobile.util.BatteryUtil
 fun TrackingScreen(
     onLogout: () -> Unit, onNavigateToEvents: () -> Unit,
     onNavigateToAttachments: () -> Unit,  // Sección 29
+    onNavigateToMap: () -> Unit,
     viewModel: TrackingViewModel = hiltViewModel()
 ) {
     val identity by viewModel.userIdentity.collectAsStateWithLifecycle()
@@ -46,68 +48,96 @@ fun TrackingScreen(
     val context = LocalContext.current
     val battery = remember { BatteryUtil.getLevel(context) }
 
+    val activeTrip by viewModel.activeTrip.collectAsStateWithLifecycle()
+    var showEndTripDialog by remember { mutableStateOf(false) }
+
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val locGranted = permissions.getOrDefault(android.Manifest.permission.ACCESS_FINE_LOCATION, false) ||
                          permissions.getOrDefault(android.Manifest.permission.ACCESS_COARSE_LOCATION, false)
-        // Se requiere location sí o sí para iniciar el servicio, las notificaciones en Tiramisu+
         if (locGranted) {
             viewModel.startTracking()
         }
+    }
+    
+    if (showEndTripDialog) {
+        AlertDialog(
+            onDismissRequest = { showEndTripDialog = false },
+            title = { Text("Finalizar Viaje", color = TextPrimary) },
+            text = { Text("¿Confirmás que finalizás el viaje? Esta acción no se puede deshacer.", color = TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showEndTripDialog = false
+                    viewModel.completeTrip(onSuccess = { onLogout() }) // Navigates to ModeSelection via onLogout / navgraph or we can just pop to ModeSelection 
+                }) {
+                    Text("Confirmar", color = SOSRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEndTripDialog = false }) {
+                    Text("Cancelar", color = TextPrimary)
+                }
+            },
+            containerColor = DeepSpaceTop
+        )
     }
 
     Column(
         modifier = Modifier.fillMaxSize().background(deepSpaceGradient()).padding(20.dp).systemBarsPadding(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Sección 10.1 — 403: banner rojo, tracking detenido, botón bloqueado
+        // ... (Error Banners)
         if (accessRevoked) {
             Surface(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                 shape = RoundedCornerShape(10.dp),
                 color = SOSRed.copy(alpha = 0.15f)
             ) {
-                Text(
-                    "Tu acceso fue desactivado por el operador. Contactalo si es un error.",
-                    modifier = Modifier.padding(12.dp),
-                    color = SOSRed, fontSize = 12.sp
-                )
+                Text("Tu acceso fue desactivado por el operador. Contactalo si es un error.", modifier = Modifier.padding(12.dp), color = SOSRed, fontSize = 12.sp)
             }
         }
-        // Sección 10.1 — 401: banner ámbar, tracking SIGUE activo, solo advierte
         if (credentialWarning && !accessRevoked) {
             Surface(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                 shape = RoundedCornerShape(10.dp),
                 color = WarningAmber.copy(alpha = 0.15f)
             ) {
-                Text(
-                    "Tu API Key no es válida. El tracking sigue activo y guardando localmente — pedile al operador que la revise.",
-                    modifier = Modifier.padding(12.dp),
-                    color = WarningAmber, fontSize = 12.sp
-                )
+                Text("Tu API Key no es válida. El tracking sigue activo y guardando localmente.", modifier = Modifier.padding(12.dp), color = WarningAmber, fontSize = 12.sp)
             }
         }
         // Header
         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-            Text(stringResource(R.string.app_name), fontSize = 17.sp, fontWeight = FontWeight.W500, color = TextPrimary)
+            Text(if (activeTrip != null) "VIAJE ACTIVO" else "SEGUIMIENTO LIBRE", fontSize = 17.sp, fontWeight = FontWeight.W500, color = if (activeTrip != null) TechGlowCyan else TextPrimary)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusBadge(if (isTracking) stringResource(R.string.tracking_active) else stringResource(R.string.tracking_stopped),
                     if (isTracking) SuccessGreen else TextMuted)
                 Spacer(Modifier.width(8.dp))
-                IconButton(onClick = onLogout) { Icon(Icons.AutoMirrored.Filled.ExitToApp, "Salir", tint = TextSecondary) }
+                // Solo permitimos logout si no hay viaje activo. Si hay viaje activo, obligamos a cerrarlo.
+                if (activeTrip == null) {
+                    IconButton(onClick = onLogout) { Icon(Icons.AutoMirrored.Filled.ExitToApp, "Salir", tint = TextSecondary) }
+                }
             }
         }
         Spacer(Modifier.height(12.dp))
-        // Identidad
-        identity?.let {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                IdentityChip("Documento", it.documentId, Modifier.weight(1f))
-                IdentityChip("Patente", it.plate, Modifier.weight(1f))
+        
+        // Información del Viaje (si existe)
+        activeTrip?.let { trip ->
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                shape = RoundedCornerShape(14.dp), border = BorderStroke(0.5.dp, TechGlowCyan.copy(alpha=0.5f))) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("Origen: ${trip.origin}", fontSize = 13.sp, color = TextPrimary)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Destino: ${trip.destination}", fontSize = 13.sp, color = TextPrimary)
+                    if (trip.cargoType.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text("Carga: ${trip.cargoType}", fontSize = 12.sp, color = TextSecondary)
+                    }
+                }
             }
+            Spacer(Modifier.height(16.dp))
         }
-        Spacer(Modifier.height(24.dp))
+
         // Velocímetro
         Box(modifier = Modifier.size(140.dp).border(3.dp,
             if (isTracking) techGlowGradient() else Brush.linearGradient(listOf(SurfaceBorder, SurfaceBorder)), CircleShape),
@@ -141,15 +171,23 @@ fun TrackingScreen(
                 fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextMuted)
         }
         Spacer(Modifier.weight(1f))
-        // Botón eventos
-        OutlinedButton(onClick = onNavigateToEvents, modifier = Modifier.fillMaxWidth().height(48.dp),
-            shape = RoundedCornerShape(12.dp), border = BorderStroke(0.5.dp, SurfaceBorder),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary)) {
-            Icon(Icons.Default.Notifications, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.events_title), fontSize = 14.sp)
+        
+        // Botones de acción
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = onNavigateToEvents, modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(12.dp), border = BorderStroke(0.5.dp, SurfaceBorder),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary)) {
+                Icon(Icons.Default.Notifications, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp))
+                Text("Eventos", fontSize = 13.sp)
+            }
+            OutlinedButton(onClick = onNavigateToMap, modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(12.dp), border = BorderStroke(0.5.dp, SurfaceBorder),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary)) {
+                Icon(Icons.Default.LocationOn, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp))
+                Text("Mapa", fontSize = 13.sp)
+            }
         }
         Spacer(Modifier.height(8.dp))
-        // Botón fotos de carga (Sección 29)
         OutlinedButton(onClick = onNavigateToAttachments, modifier = Modifier.fillMaxWidth().height(48.dp),
             shape = RoundedCornerShape(12.dp), border = BorderStroke(0.5.dp, SurfaceBorder),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary)) {
@@ -157,7 +195,8 @@ fun TrackingScreen(
             Text("Fotos de carga", fontSize = 14.sp)
         }
         Spacer(Modifier.height(10.dp))
-        // Botón principal — bloqueado si el operador revocó el acceso (Sección 10.1, 403)
+        
+        // Botón principal
         Box(modifier = Modifier.fillMaxWidth().height(60.dp).clip(RoundedCornerShape(14.dp))
             .background(
                 when {
@@ -167,25 +206,30 @@ fun TrackingScreen(
                 }
             )
             .clickable(enabled = !accessRevoked) {
-                if (isTracking) {
-                    viewModel.stopTracking()
+                if (activeTrip != null) {
+                    showEndTripDialog = true
                 } else {
-                    val permissions = mutableListOf(
-                        android.Manifest.permission.ACCESS_FINE_LOCATION,
-                        android.Manifest.permission.ACCESS_COARSE_LOCATION
-                    )
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                        permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
+                    if (isTracking) {
+                        viewModel.stopTracking()
+                    } else {
+                        val permissions = mutableListOf(
+                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION
+                        )
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                        permissionLauncher.launch(permissions.toTypedArray())
                     }
-                    permissionLauncher.launch(permissions.toTypedArray())
                 }
             },
             contentAlignment = Alignment.Center) {
             Text(
                 when {
                     accessRevoked -> "Acceso desactivado"
-                    isTracking -> stringResource(R.string.tracking_stop)
-                    else -> stringResource(R.string.tracking_start)
+                    activeTrip != null -> "Finalizar Viaje"
+                    isTracking -> "Detener Seguimiento Libre"
+                    else -> "Iniciar Seguimiento Libre"
                 },
                 fontSize = 17.sp, fontWeight = FontWeight.W500,
                 color = if (accessRevoked) TextMuted else if (!isTracking) IconOnGlow else Color.White

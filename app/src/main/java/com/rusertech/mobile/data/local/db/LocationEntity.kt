@@ -18,5 +18,6 @@ data class LocationEntity(
     val altitude: Double,
     val battery: Int,
     val timestamp: Long,
+    val tripId: String? = null,
     val isSynced: Boolean = false
 )

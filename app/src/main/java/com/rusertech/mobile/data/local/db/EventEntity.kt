@@ -19,5 +19,6 @@ data class EventEntity(
     val timestamp: Long,
     val notes: String = "",
     val metadataJson: String = "{}",
+    val tripId: String? = null,
     val isSynced: Boolean = false
 )

@@ -38,7 +38,7 @@ class RegistrationViewModel @Inject constructor(
         networkError = null
     }
     fun onActivationCodeChange(input: String) {
-        activationCode = input.take(128)
+        activationCode = input.uppercase().take(15)
         activationError = if (activationCode.length < 4) "Código inválido" else null
         networkError = null
     }
@@ -58,7 +58,7 @@ class RegistrationViewModel @Inject constructor(
             if (result.isSuccess) {
                 onDone()
             } else {
-                networkError = "Error de conexión o datos incorrectos"
+                networkError = result.exceptionOrNull()?.message ?: "Error desconocido"
             }
         }
     }

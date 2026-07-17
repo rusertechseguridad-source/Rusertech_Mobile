@@ -27,6 +27,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
@@ -98,17 +99,20 @@ class TrackingService : Service() {
             locationManager.locations.collect { location ->
                 _lastLocation.value = location
                 val id = identity ?: return@collect
+                val currentTrip = userPreferences.activeTrip.firstOrNull()
+                
                 val point = LocationPoint(
                     latitude = location.latitude, longitude = location.longitude,
                     accuracy = location.accuracy, speed = location.speed,
                     heading = if (location.hasBearing()) location.bearing else 0f,
                     altitude = location.altitude,
                     battery = BatteryUtil.getLevel(this@TrackingService),
-                    timestamp = System.currentTimeMillis()
+                    timestamp = System.currentTimeMillis(),
+                    tripId = currentTrip?.tripId
                 )
                 locationRepository.saveLocation(id, point)
                 updateNotification(point.speedKmh().toInt())
-                checkAutoEvents(location, id)
+                checkAutoEvents(location, id, currentTrip?.tripId)
             }
         }
         scheduleSyncWork()
@@ -150,20 +154,20 @@ class TrackingService : Service() {
             .build())
     }
 
-    private suspend fun checkAutoEvents(location: Location, id: UserIdentity) {
+    private suspend fun checkAutoEvents(location: Location, id: UserIdentity, tripId: String?) {
         val now = System.currentTimeMillis()
         val battery = BatteryUtil.getLevel(this)
         if (battery in 0..15 && now - lastBatteryAlert > 30 * 60_000L) {
             lastBatteryAlert = now
             eventRepository.createEvent(EventType.LOW_BATTERY, id, location.latitude, location.longitude,
-                metadata = mapOf("battery_level" to battery.toString()))
+                metadata = mapOf("battery_level" to battery.toString()), tripId = tripId)
         }
         val isMoving = location.speed >= LocationManager.SPEED_THRESHOLD_MS
         when {
             !isMoving && wasMoving -> vehicleStoppedSince = now
             !isMoving && vehicleStoppedSince > 0 && now - vehicleStoppedSince > 5 * 60_000L -> {
                 eventRepository.createEvent(EventType.VEHICLE_STOP, id, location.latitude, location.longitude,
-                    metadata = mapOf("stop_duration_seconds" to ((now - vehicleStoppedSince) / 1000).toString()))
+                    metadata = mapOf("stop_duration_seconds" to ((now - vehicleStoppedSince) / 1000).toString()), tripId = tripId)
                 vehicleStoppedSince = 0L
             }
         }

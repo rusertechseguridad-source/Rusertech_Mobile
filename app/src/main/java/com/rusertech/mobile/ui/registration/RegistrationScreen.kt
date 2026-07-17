@@ -25,9 +25,14 @@ import com.rusertech.mobile.ui.common.GradientButton
 import com.rusertech.mobile.ui.common.RusertechTextField
 import com.rusertech.mobile.ui.theme.*
 
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+// ... 
+
 @Composable
 fun RegistrationScreen(
     onRegistered: () -> Unit,
+    onNavigateToDebug: () -> Unit,
     viewModel: RegistrationViewModel = hiltViewModel()
 ) {
     Column(
@@ -37,11 +42,40 @@ fun RegistrationScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Logo
-        Image(painterResource(R.drawable.rusertech_logo), contentDescription = stringResource(R.string.app_name),
-            modifier = Modifier.size(96.dp).clip(RoundedCornerShape(20.dp)))
+        Image(
+            painterResource(R.drawable.rusertech_logo), 
+            contentDescription = stringResource(R.string.app_name),
+            modifier = Modifier.size(96.dp).clip(RoundedCornerShape(20.dp))
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onLongPress = { 
+                            if (com.rusertech.mobile.BuildConfig.DEBUG) onNavigateToDebug() 
+                        }
+                    )
+                }
+        )
         Spacer(Modifier.height(20.dp))
         Text("Rusertech Mobile®", fontSize = 24.sp, fontWeight = FontWeight.W500, color = TextPrimary)
         Text("Seguridad & Logística", fontSize = 13.sp, color = TextSecondary)
+        
+        Spacer(Modifier.height(16.dp))
+        // Banner de Mock
+        androidx.compose.material3.Surface(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            color = WarningAmber.copy(alpha = 0.2f),
+            shape = RoundedCornerShape(8.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, WarningAmber)
+        ) {
+            Text(
+                "[MODO DESARROLLO — login simulado]",
+                modifier = Modifier.padding(12.dp),
+                color = WarningAmber,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.W600,
+                textAlign = TextAlign.Center
+            )
+        }
+        
         Spacer(Modifier.height(28.dp))
 
         // Campos del conductor
@@ -55,8 +89,7 @@ fun RegistrationScreen(
         Spacer(Modifier.height(12.dp))
         RusertechTextField(viewModel.activationCode, viewModel::onActivationCodeChange,
             "Código de activación", "PIN provisto por el operador",
-            error = viewModel.activationError, keyboardType = KeyboardType.Text,
-            singleLine = false, maxLines = 3)
+            error = viewModel.activationError, capitalization = KeyboardCapitalization.Characters)
 
         Spacer(Modifier.height(28.dp))
         if (viewModel.networkError != null) {

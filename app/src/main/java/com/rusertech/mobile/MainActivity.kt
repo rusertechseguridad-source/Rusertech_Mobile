@@ -16,6 +16,7 @@ import dagger.hilt.android.AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        org.osmdroid.config.Configuration.getInstance().load(applicationContext, android.preference.PreferenceManager.getDefaultSharedPreferences(applicationContext))
         enableEdgeToEdge()
         setContent { RusertechTheme { Surface(Modifier.fillMaxSize(), color = DeepSpaceTop) { RusertechNavHost() } } }
     }

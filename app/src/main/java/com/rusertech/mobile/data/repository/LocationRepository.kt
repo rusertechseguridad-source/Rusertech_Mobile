@@ -26,7 +26,8 @@ class LocationRepository @Inject constructor(
             latitude = point.latitude, longitude = point.longitude,
             accuracy = point.accuracy, speed = point.speed,
             heading = point.heading, altitude = point.altitude,
-            battery = point.battery, timestamp = point.timestamp
+            battery = point.battery, timestamp = point.timestamp,
+            tripId = point.tripId
         )
         val id = dao.insert(entity)
 
@@ -43,6 +44,13 @@ class LocationRepository @Inject constructor(
 
         val payloads = pending.map { it.toHubPayload(identity) }
         val response = api.ingestBatch(identity.apiKey, payloads)
+        
+        // TODO (Track 2): Manejar el cierre remoto de viaje desde el dashboard web.
+        // Si el operador finaliza el viaje (el TripId enviado ya está cerrado), el backend 
+        // debería devolver un HTTP 409 Conflict o un 200 OK con { trip_closed: true }.
+        // Al recibir esta respuesta, la app debe limpiar 'UserPreferences.activeTrip' 
+        // y detener el TrackingService, informando al conductor "Viaje finalizado por operador".
+        
         if (!response.isSuccessful) {
             throw IllegalStateException("Sync falló con HTTP ${response.code()}")
         }
@@ -77,6 +85,7 @@ class LocationRepository @Inject constructor(
         ignition = if (speed > 0) 1 else 0,
         battery = battery,
         code = null,  // Sin evento — es telemetría pura
-        shipment = null
+        shipment = null,
+        tripId = tripId
     )
 }

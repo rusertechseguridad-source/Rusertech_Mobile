@@ -47,4 +47,21 @@ object NetworkModule {
 
     @Provides @Singleton
     fun provideAuthApi(retrofit: Retrofit): com.rusertech.mobile.data.remote.api.AuthApi = retrofit.create(com.rusertech.mobile.data.remote.api.AuthApi::class.java)
+
+    @Provides @Singleton
+    fun provideMapApi(json: Json): com.rusertech.mobile.data.remote.api.MapApi {
+        val publicOkHttp = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS)
+            .apply {
+                if (BuildConfig.DEBUG) {
+                    addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
+                }
+            }.build()
+
+        return Retrofit.Builder()
+            .baseUrl("https://dummy.com/") // Overridden by @Url
+            .client(publicOkHttp)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType())).build()
+            .create(com.rusertech.mobile.data.remote.api.MapApi::class.java)
+    }
 }

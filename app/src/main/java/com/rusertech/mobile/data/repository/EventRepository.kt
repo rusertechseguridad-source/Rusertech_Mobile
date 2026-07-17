@@ -31,7 +31,8 @@ class EventRepository @Inject constructor(
         latitude: Double,
         longitude: Double,
         notes: String = "",
-        metadata: Map<String, String> = emptyMap()
+        metadata: Map<String, String> = emptyMap(),
+        tripId: String? = null
     ): Long {
         val entity = EventEntity(
             type = type.code,
@@ -41,7 +42,8 @@ class EventRepository @Inject constructor(
             notes = notes,
             metadataJson = kotlinx.serialization.json.Json.encodeToString(
                 kotlinx.serialization.serializer(), metadata
-            )
+            ),
+            tripId = tripId
         )
         val id = dao.insert(entity)
 
@@ -92,6 +94,7 @@ class EventRepository @Inject constructor(
         ignition = 1,
         battery = null,
         code = type,  // MOB_SOS, MOB_CHKPT, MOB_COMM, MOB_INCIDENT, etc.
-        shipment = if (notes.isNotBlank()) notes else null  // Notas van en Shipment
+        shipment = if (notes.isNotBlank()) notes else null,  // Notas van en Shipment
+        tripId = tripId
     )
 }
