@@ -17,16 +17,22 @@ android {
         versionCode = 1
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // URL del backend Rusertech Web — mismo servidor que el dashboard
-        buildConfigField("String", "BACKEND_BASE_URL", "\"https://api.rusertech.com/\"")
     }
 
+    // ---------------------------------------------------------------------
+    // URL del backend — ÚNICO lugar donde vive. Nunca hardcodear en el código.
+    // Hoy debug y release apuntan al mismo deployment en vivo: no hay backend
+    // local que levantar. Cuando el dominio propio api.rusertech.com esté
+    // activo, el swap son estas DOS líneas y nada más.
+    // La barra final es obligatoria: Retrofit la necesita para el baseUrl.
+    // ---------------------------------------------------------------------
     buildTypes {
         debug {
             isMinifyEnabled = false
-            buildConfigField("String", "BACKEND_BASE_URL", "\"http://10.0.2.2:3000/\"")
+            buildConfigField("String", "BACKEND_BASE_URL", "\"https://rusertechmobileapi.vercel.app/\"")
         }
         release {
+            buildConfigField("String", "BACKEND_BASE_URL", "\"https://rusertechmobileapi.vercel.app/\"")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

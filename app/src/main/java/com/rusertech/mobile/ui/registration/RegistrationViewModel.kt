@@ -38,7 +38,7 @@ class RegistrationViewModel @Inject constructor(
         networkError = null
     }
     fun onActivationCodeChange(input: String) {
-        activationCode = input.uppercase().take(15)
+        activationCode = input.take(128)
         activationError = if (activationCode.length < 4) "Código inválido" else null
         networkError = null
     }

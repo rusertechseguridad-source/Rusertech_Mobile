@@ -60,18 +60,6 @@ class UserPreferences @Inject constructor(
         } else null
     }
 
-    // DEBUG MOCK MODE
-    val mockAuthMode: Flow<MockAuthMode> = context.dataStore.data.map { prefs ->
-        try {
-            MockAuthMode.valueOf(prefs[stringPreferencesKey("mock_auth_mode")] ?: MockAuthMode.SUCCESS.name)
-        } catch(e: Exception) { MockAuthMode.SUCCESS }
-    }
-
-    suspend fun setMockAuthMode(mode: MockAuthMode) {
-        context.dataStore.edit { it[stringPreferencesKey("mock_auth_mode")] = mode.name }
-    }
-    // END DEBUG MOCK MODE
-
     suspend fun saveIdentity(documentId: String, plate: String, activationCode: String, avlUserCode: String, apiKey: String) {
         context.dataStore.edit { prefs ->
             prefs[Keys.DOCUMENT_ID] = documentId.trim()
@@ -119,12 +107,3 @@ data class ActiveTrip(
     val cargoType: String,
     val startedAt: Long
 )
-
-enum class MockAuthMode {
-    SUCCESS,
-    UNAUTHORIZED_401,
-    FORBIDDEN_403,
-    NOT_FOUND_404,
-    RATE_LIMITED_429,
-    SERVER_ERROR_500
-}

@@ -24,12 +24,8 @@ fun RusertechNavHost(navController: NavHostController = rememberNavController())
         }
         composable("registration") {
             RegistrationScreen(
-                onRegistered = { navController.navigate("mode_selection") { popUpTo("registration") { inclusive = true } } },
-                onNavigateToDebug = { navController.navigate("debug_mock") }
+                onRegistered = { navController.navigate("mode_selection") { popUpTo("registration") { inclusive = true } } }
             )
-        }
-        composable("debug_mock") {
-            com.rusertech.mobile.ui.debug.DebugMockScreen(onBack = { navController.popBackStack() })
         }
         composable("mode_selection") {
             com.rusertech.mobile.ui.mode.ModeSelectionScreen(

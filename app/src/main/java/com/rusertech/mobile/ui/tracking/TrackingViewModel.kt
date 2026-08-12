@@ -68,8 +68,8 @@ class TrackingViewModel @Inject constructor(
             
             try {
                 tripRepository.completeTrip(identity.apiKey, trip.tripId)
-                // Forzar un flush the telemetría si fuera necesario, para Mock no hace falta, 
-                // ya que TrackingService al detenerse llama a locationRepository y SyncWorker
+                // No hace falta forzar un flush de telemetría: TrackingService, al
+                // detenerse, ya llama a locationRepository y al SyncWorker.
             } catch (e: Exception) {
                 // Para V1 ignoramos el error y limpiamos local de todos modos
                 prefs.clearActiveTrip()
