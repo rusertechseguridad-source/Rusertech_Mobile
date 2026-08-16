@@ -32,7 +32,6 @@ class LocationManager @Inject constructor(
     val locations: SharedFlow<Location> = _locations.asSharedFlow()
     private var callback: LocationCallback? = null
     private var currentInterval = INTERVAL_MOVING_MS
-    private var lastEmitted: Location? = null
 
     @SuppressLint("MissingPermission")
     fun startUpdates() {
@@ -41,14 +40,19 @@ class LocationManager @Inject constructor(
             override fun onLocationResult(result: LocationResult) {
                 val loc = result.lastLocation ?: return
                 if (shouldEmit(loc)) {
-                    lastEmitted = loc
                     _locations.tryEmit(loc)
                     adaptInterval(loc.speed)
                 }
             }
         }
+        // SIN setMinUpdateDistanceMeters: con el filtro de desplazamiento a
+        // nivel del OS, un vehículo quieto no recibía NINGÚN callback, y la
+        // detección de parada (MOB_STOP) y el auto-resume de FIX-10 quedaban
+        // ciegos justo cuando más se los necesita. El ritmo lo gobierna el
+        // intervalo adaptativo (10 s en movimiento / 60 s quieto) — que es lo
+        // que manda en el consumo de batería; el filtro de desplazamiento
+        // para PERSISTIR ahora vive en TrackingService.
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, currentInterval)
-            .setMinUpdateDistanceMeters(SMALLEST_DISPLACEMENT_M)
             .setMaxUpdateDelayMillis(currentInterval * 2)
             .setWaitForAccurateLocation(false)
             .build()
@@ -57,14 +61,12 @@ class LocationManager @Inject constructor(
 
     fun stopUpdates() {
         callback?.let { fusedClient.removeLocationUpdates(it); callback = null }
-        lastEmitted = null
     }
 
-    private fun shouldEmit(loc: Location): Boolean {
-        if (loc.accuracy <= 0f || loc.accuracy > MAX_ACCURACY_METERS) return false
-        val last = lastEmitted ?: return true
-        return !(last.distanceTo(loc) < SMALLEST_DISPLACEMENT_M && loc.speed < SPEED_THRESHOLD_MS)
-    }
+    /** Solo filtra por precisión: cada punto preciso llega al servicio,
+     *  aunque el vehículo esté quieto (lo necesita la lógica de paradas). */
+    private fun shouldEmit(loc: Location): Boolean =
+        loc.accuracy > 0f && loc.accuracy <= MAX_ACCURACY_METERS
 
     @SuppressLint("MissingPermission")
     private fun adaptInterval(speed: Float) {

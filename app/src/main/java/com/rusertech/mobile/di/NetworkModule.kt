@@ -48,6 +48,10 @@ object NetworkModule {
     @Provides @Singleton
     fun provideAuthApi(retrofit: Retrofit): com.rusertech.mobile.data.remote.api.AuthApi = retrofit.create(com.rusertech.mobile.data.remote.api.AuthApi::class.java)
 
+    // FIX-2: TripApi sale del MISMO Retrofit autenticado que TrackingApi.
+    @Provides @Singleton
+    fun provideTripApi(retrofit: Retrofit): com.rusertech.mobile.data.remote.api.TripApi = retrofit.create(com.rusertech.mobile.data.remote.api.TripApi::class.java)
+
     @Provides @Singleton
     fun provideMapApi(json: Json): com.rusertech.mobile.data.remote.api.MapApi {
         val publicOkHttp = OkHttpClient.Builder()

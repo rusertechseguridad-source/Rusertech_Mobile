@@ -2,6 +2,7 @@ package com.rusertech.mobile.data.repository
 
 import com.rusertech.mobile.data.local.db.LocationDao
 import com.rusertech.mobile.data.local.db.LocationEntity
+import com.rusertech.mobile.data.local.prefs.UserPreferences
 import com.rusertech.mobile.data.remote.api.HubRawPayload
 import com.rusertech.mobile.data.remote.api.TrackingApi
 import com.rusertech.mobile.domain.model.LocationPoint
@@ -18,7 +19,8 @@ import javax.inject.Singleton
 class LocationRepository @Inject constructor(
     private val dao: LocationDao,
     private val api: TrackingApi,
-    private val networkUtil: NetworkUtil
+    private val networkUtil: NetworkUtil,
+    private val prefs: UserPreferences
 ) {
     /** Siempre persiste localmente primero. Intento inmediato si hay red. */
     suspend fun saveLocation(identity: UserIdentity, point: LocationPoint) {
@@ -42,7 +44,8 @@ class LocationRepository @Inject constructor(
         val pending = dao.getUnsynced(50)
         if (pending.isEmpty()) return@runCatching 0
 
-        val payloads = pending.map { it.toHubPayload(identity) }
+        val driverState = prefs.driverStateSnapshot()
+        val payloads = pending.map { it.toHubPayload(identity, driverState) }
         val response = api.ingestBatch(identity.apiKey, payloads)
         
         // TODO (Track 2): Manejar el cierre remoto de viaje desde el dashboard web.
@@ -64,16 +67,19 @@ class LocationRepository @Inject constructor(
 
     private suspend fun tryImmediateSend(identity: UserIdentity, entity: LocationEntity) {
         try {
-            val resp = api.ingest(identity.apiKey, entity.toHubPayload(identity))
+            val driverState = prefs.driverStateSnapshot()
+            val resp = api.ingest(identity.apiKey, entity.toHubPayload(identity, driverState))
             if (resp.isSuccessful) dao.markSynced(listOf(entity.id))
         } catch (_: Exception) { /* WorkManager reintentará */ }
     }
 
     /** Convierte una LocationEntity al formato HubRawPayload del backend web. */
-    private fun LocationEntity.toHubPayload(identity: UserIdentity) = HubRawPayload(
+    private fun LocationEntity.toHubPayload(identity: UserIdentity, driverState: String?) = HubRawPayload(
         userAvl = identity.avlUserCode,
         asset = identity.plate,
-        mobileCode = identity.activationCode,
+        // Unificación MobileCode: SIEMPRE el avlUserCode que devolvió el login
+        // (antes iba el código de activación y el backend usaba otro valor).
+        mobileCode = identity.avlUserCode,
         driverDni = identity.documentId,
         latitude = latitude,
         longitude = longitude,
@@ -86,6 +92,7 @@ class LocationRepository @Inject constructor(
         battery = battery,
         code = null,  // Sin evento — es telemetría pura
         shipment = null,
-        tripId = tripId
+        tripId = tripId,
+        driverState = driverState
     )
 }

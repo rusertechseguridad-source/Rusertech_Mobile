@@ -8,6 +8,7 @@ import androidx.work.WorkerParameters
 import com.rusertech.mobile.data.local.prefs.UserPreferences
 import com.rusertech.mobile.data.repository.EventRepository
 import com.rusertech.mobile.data.repository.LocationRepository
+import com.rusertech.mobile.data.repository.TripRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
@@ -17,6 +18,7 @@ class SyncWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val locationRepository: LocationRepository,
     private val eventRepository: EventRepository,
+    private val tripRepository: TripRepository,
     private val userPreferences: UserPreferences
 ) : CoroutineWorker(appContext, params) {
     companion object { private const val TAG = "SyncWorker" }
@@ -24,6 +26,9 @@ class SyncWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         val identity = userPreferences.snapshot() ?: return Result.failure()
         return try {
+            // FIX-2: primero el cierre de viaje pendiente (si lo hay) — así los
+            // puntos que siguen ya no llevan un tripId que debería estar cerrado.
+            tripRepository.retryPendingTripClose(identity)
             val events = eventRepository.syncPending(identity)
             val locations = locationRepository.syncPending(identity)
             val total = events.getOrDefault(0) + locations.getOrDefault(0)

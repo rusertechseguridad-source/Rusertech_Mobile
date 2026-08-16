@@ -94,6 +94,40 @@ fun CreateTripScreen(
                 maxLines = 4,
                 modifier = Modifier.heightIn(min = 100.dp)
             )
+            Spacer(Modifier.height(20.dp))
+
+            // FIX-2: duración planificada del viaje. Chips con opciones
+            // cerradas — sin texto libre. El backend calcula planned_end.
+            Text("Duración estimada", color = TextSecondary, fontSize = 13.sp)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CreateTripViewModel.PLANNED_HOURS_OPTIONS.forEach { hours ->
+                    val selected = viewModel.plannedHours == hours
+                    FilterChip(
+                        selected = selected,
+                        onClick = { viewModel.onPlannedHoursChange(hours) },
+                        label = {
+                            Text(
+                                "+${hours} h",
+                                fontSize = 13.sp,
+                                fontWeight = if (selected) FontWeight.W600 else FontWeight.Normal
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = SurfaceInput,
+                            labelColor = TextSecondary,
+                            selectedContainerColor = TechGlowCyan.copy(alpha = 0.2f),
+                            selectedLabelColor = TechGlowCyan
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = selected,
+                            borderColor = SurfaceBorder,
+                            selectedBorderColor = TechGlowCyan
+                        )
+                    )
+                }
+            }
             Spacer(Modifier.height(32.dp))
             
             if (viewModel.networkError != null) {

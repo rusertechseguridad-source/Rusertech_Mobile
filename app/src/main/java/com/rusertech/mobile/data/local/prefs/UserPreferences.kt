@@ -31,6 +31,12 @@ class UserPreferences @Inject constructor(
         val TRIP_DESTINATION = stringPreferencesKey("trip_destination")
         val TRIP_CARGO = stringPreferencesKey("trip_cargo")
         val TRIP_STARTED_AT = androidx.datastore.preferences.core.longPreferencesKey("trip_started_at")
+        // FIX-2: cierre de viaje pendiente de confirmar contra el backend
+        // (el conductor terminó offline; SyncWorker reintenta hasta 2xx/404/409).
+        val PENDING_TRIP_CLOSE = stringPreferencesKey("pending_trip_close")
+        // FIX-10: estado operativo del conductor (en_route / stopped_*).
+        // Sobrevive a reinicios y reboots.
+        val DRIVER_STATE = stringPreferencesKey("driver_state")
     }
 
     val userIdentity: Flow<UserIdentity?> = context.dataStore.data.map { prefs ->
@@ -93,6 +99,36 @@ class UserPreferences @Inject constructor(
     }
 
     suspend fun clearActiveTrip() = setActiveTrip(null)
+
+    // ------------------------------------------------------------------
+    // FIX-2: cierre de viaje pendiente
+    // ------------------------------------------------------------------
+
+    suspend fun setPendingTripClose(tripId: String?) {
+        context.dataStore.edit { prefs ->
+            if (tripId != null) prefs[Keys.PENDING_TRIP_CLOSE] = tripId
+            else prefs.remove(Keys.PENDING_TRIP_CLOSE)
+        }
+    }
+
+    suspend fun pendingTripCloseSnapshot(): String? =
+        context.dataStore.data.map { it[Keys.PENDING_TRIP_CLOSE] }.first()
+
+    // ------------------------------------------------------------------
+    // FIX-10: estado operativo del conductor
+    // ------------------------------------------------------------------
+
+    /** Valor crudo (en_route / stopped_*), null si no hay estado declarado. */
+    val driverState: Flow<String?> = context.dataStore.data.map { it[Keys.DRIVER_STATE] }
+
+    suspend fun setDriverState(state: String?) {
+        context.dataStore.edit { prefs ->
+            if (state != null) prefs[Keys.DRIVER_STATE] = state
+            else prefs.remove(Keys.DRIVER_STATE)
+        }
+    }
+
+    suspend fun driverStateSnapshot(): String? = driverState.first()
 
     suspend fun snapshot(): UserIdentity? = userIdentity.first()
     suspend fun isTrackingSnapshot(): Boolean = isTracking.first()

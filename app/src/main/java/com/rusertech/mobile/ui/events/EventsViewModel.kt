@@ -43,8 +43,10 @@ class EventsViewModel @Inject constructor(
     fun fireEvent(type: EventType) {
         viewModelScope.launch {
             val identity = userRepository.userIdentity.firstOrNull() ?: return@launch
+            // Sin fix de GPS se pasa null — NUNCA 0,0. EventRepository resuelve:
+            // última posición conocida (staleLocation) o encolar hasta el primer fix.
             val location = TrackingService.lastLocation.value
-            eventRepository.createEvent(type, identity, location?.latitude ?: 0.0, location?.longitude ?: 0.0)
+            eventRepository.createEvent(type, identity, location?.latitude, location?.longitude)
             _feedback.value = type.displayName; delay(3000); _feedback.value = null
         }
     }
@@ -54,7 +56,7 @@ class EventsViewModel @Inject constructor(
         viewModelScope.launch {
             val identity = userRepository.userIdentity.firstOrNull() ?: return@launch
             val location = TrackingService.lastLocation.value
-            eventRepository.createEvent(EventType.SOS, identity, location?.latitude ?: 0.0, location?.longitude ?: 0.0,
+            eventRepository.createEvent(EventType.SOS, identity, location?.latitude, location?.longitude,
                 metadata = mapOf("battery" to BatteryUtil.getLevel(context).toString(),
                     "network" to if (isOnline.value) "online" else "offline"))
             _feedback.value = "SOS enviado"; delay(3000); _feedback.value = null

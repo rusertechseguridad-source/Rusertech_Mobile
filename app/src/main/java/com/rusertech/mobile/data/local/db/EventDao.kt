@@ -11,11 +11,23 @@ interface EventDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: EventEntity): Long
 
-    @Query("SELECT * FROM tracking_events WHERE isSynced = 0 ORDER BY timestamp ASC LIMIT :limit")
+    // awaitingFix = 0: un evento que espera su primer fix de GPS NUNCA se envía
+    // (sus coordenadas todavía son el placeholder 0,0).
+    @Query("SELECT * FROM tracking_events WHERE isSynced = 0 AND awaitingFix = 0 ORDER BY timestamp ASC LIMIT :limit")
     suspend fun getUnsynced(limit: Int = 30): List<EventEntity>
 
     @Query("UPDATE tracking_events SET isSynced = 1 WHERE id IN (:ids)")
     suspend fun markSynced(ids: List<Long>)
+
+    @Query("SELECT COUNT(*) FROM tracking_events WHERE awaitingFix = 1")
+    suspend fun countAwaitingFix(): Int
+
+    /**
+     * Completa con el primer fix real las coordenadas de los eventos que se
+     * crearon sin ninguna posición disponible, y los libera para el sync.
+     */
+    @Query("UPDATE tracking_events SET latitude = :lat, longitude = :lng, awaitingFix = 0 WHERE awaitingFix = 1")
+    suspend fun resolveAwaitingFix(lat: Double, lng: Double): Int
 
     @Query("SELECT * FROM tracking_events ORDER BY timestamp DESC LIMIT :limit")
     fun getRecent(limit: Int = 30): Flow<List<EventEntity>>

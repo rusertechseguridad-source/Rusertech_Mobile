@@ -20,5 +20,9 @@ data class EventEntity(
     val notes: String = "",
     val metadataJson: String = "{}",
     val tripId: String? = null,
-    val isSynced: Boolean = false
+    val isSynced: Boolean = false,
+    // true = el evento se creó SIN ninguna posición disponible y espera el
+    // primer fix de GPS para completar sus coordenadas. Mientras esté en true,
+    // el sync NO lo envía (jamás mandar un evento con lat/lng 0,0).
+    val awaitingFix: Boolean = false
 )

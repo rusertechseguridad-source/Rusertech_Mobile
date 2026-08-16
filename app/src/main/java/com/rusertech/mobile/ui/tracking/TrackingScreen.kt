@@ -28,9 +28,11 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rusertech.mobile.R
+import com.rusertech.mobile.domain.model.DriverState
 import com.rusertech.mobile.ui.theme.*
 import com.rusertech.mobile.util.BatteryUtil
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TrackingScreen(
     onLogout: () -> Unit, onNavigateToEvents: () -> Unit,
@@ -51,6 +53,10 @@ fun TrackingScreen(
     val activeTrip by viewModel.activeTrip.collectAsStateWithLifecycle()
     var showEndTripDialog by remember { mutableStateOf(false) }
 
+    // FIX-10: estado operativo del conductor + bottom sheet para declararlo.
+    val driverState by viewModel.driverState.collectAsStateWithLifecycle()
+    var showStateSheet by remember { mutableStateOf(false) }
+
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -61,6 +67,54 @@ fun TrackingScreen(
         }
     }
     
+    // FIX-10: bottom sheet de estados operativos — táctiles grandes, texto
+    // claro, ícono por estado. Disponible en Modo Viaje y en Tracking Libre.
+    if (showStateSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showStateSheet = false },
+            containerColor = DeepSpaceTop
+        ) {
+            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
+                Text("¿Cuál es tu situación?", fontSize = 17.sp, fontWeight = FontWeight.W600, color = TextPrimary)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Declarar una parada evita la alerta de seguridad por detención no avisada.",
+                    fontSize = 12.sp, color = TextSecondary
+                )
+                Spacer(Modifier.height(16.dp))
+                DriverState.entries.forEach { state ->
+                    val selected = state == driverState
+                    Surface(
+                        onClick = {
+                            showStateSheet = false
+                            viewModel.declareState(state)
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (selected) TechGlowCyan.copy(alpha = 0.15f) else SurfaceCard,
+                        border = BorderStroke(0.5.dp, if (selected) TechGlowCyan else SurfaceBorder)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(driverStateIcon(state), fontSize = 22.sp)
+                            Spacer(Modifier.width(14.dp))
+                            Column {
+                                Text(
+                                    state.displayName, fontSize = 15.sp,
+                                    fontWeight = if (selected) FontWeight.W600 else FontWeight.W500,
+                                    color = if (selected) TechGlowCyan else TextPrimary
+                                )
+                                Text(driverStateHint(state), fontSize = 12.sp, color = TextSecondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if (showEndTripDialog) {
         AlertDialog(
             onDismissRequest = { showEndTripDialog = false },
@@ -133,6 +187,38 @@ fun TrackingScreen(
                         Spacer(Modifier.height(4.dp))
                         Text("Carga: ${trip.cargoType}", fontSize = 12.sp, color = TextSecondary)
                     }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+
+        // FIX-10: estado operativo — siempre visible; tap abre el selector.
+        // Disponible con tracking activo, en Modo Viaje y en Tracking Libre.
+        if (isTracking) {
+            Surface(
+                onClick = { showStateSheet = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = if (driverState.isDeclaredStop) WarningAmber.copy(alpha = 0.12f) else SurfaceCard,
+                border = BorderStroke(0.5.dp, if (driverState.isDeclaredStop) WarningAmber else SurfaceBorder)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(driverStateIcon(driverState), fontSize = 18.sp)
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text("Estado", fontSize = 11.sp, color = TextMuted)
+                            Text(
+                                driverState.displayName, fontSize = 14.sp, fontWeight = FontWeight.W600,
+                                color = if (driverState.isDeclaredStop) WarningAmber else TextPrimary
+                            )
+                        }
+                    }
+                    Text("Cambiar", fontSize = 12.sp, color = TechGlowCyan, fontWeight = FontWeight.W500)
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -236,6 +322,21 @@ fun TrackingScreen(
             )
         }
     }
+}
+
+// FIX-10: ícono y ayuda por estado operativo (emoji: sin assets nuevos).
+private fun driverStateIcon(state: DriverState): String = when (state) {
+    DriverState.EN_ROUTE -> "🚚"
+    DriverState.STOPPED_WAYPOINT -> "📍"
+    DriverState.STOPPED_AUTHORIZED -> "🅿️"
+    DriverState.STOPPED_SANITARY -> "🚻"
+}
+
+private fun driverStateHint(state: DriverState): String = when (state) {
+    DriverState.EN_ROUTE -> "Circulando hacia el destino"
+    DriverState.STOPPED_WAYPOINT -> "Llegué a un destino intermedio"
+    DriverState.STOPPED_AUTHORIZED -> "Parada autorizada por el operador"
+    DriverState.STOPPED_SANITARY -> "Parada breve por necesidad"
 }
 
 @Composable private fun IdentityChip(label: String, value: String, modifier: Modifier) {

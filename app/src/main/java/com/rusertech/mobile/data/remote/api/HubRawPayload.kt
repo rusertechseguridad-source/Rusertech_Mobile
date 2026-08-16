@@ -29,5 +29,8 @@ data class HubRawPayload(
     @SerialName("Code") val code: String? = null,
     @SerialName("Shipment") val shipment: String? = null,
     // Campo para vincular con un viaje en Modo 1 (null en Modo 2)
-    @SerialName("TripId") val tripId: String? = null
+    @SerialName("TripId") val tripId: String? = null,
+    // FIX-10: estado operativo vigente del conductor (en_route / stopped_*).
+    // Va en CADA punto para que el dashboard pinte el vehículo por estado.
+    @SerialName("DriverState") val driverState: String? = null
 )

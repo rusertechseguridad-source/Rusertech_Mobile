@@ -18,6 +18,7 @@ import com.rusertech.mobile.data.remote.sync.AttachmentSyncWorker
 import com.rusertech.mobile.data.remote.sync.SyncWorker
 import com.rusertech.mobile.data.repository.EventRepository
 import com.rusertech.mobile.data.repository.LocationRepository
+import com.rusertech.mobile.domain.model.DriverState
 import com.rusertech.mobile.domain.model.EventType
 import com.rusertech.mobile.domain.model.LocationPoint
 import com.rusertech.mobile.domain.model.UserIdentity
@@ -44,8 +45,16 @@ class TrackingService : Service() {
     private var collectJob: Job? = null
     private var authWatchJob: Job? = null
     private var lastBatteryAlert = 0L
+    // Detección de paradas (FIX-10): una parada = un episodio.
     private var vehicleStoppedSince = 0L
-    private var wasMoving = false
+    private var stopEventSent = false
+    // Auto-resume (FIX-10): movimiento continuo con parada declarada.
+    private var movingSince = 0L
+    // Filtro de persistencia (antes vivía en LocationManager como filtro del
+    // OS; ahora los puntos quietos SÍ llegan para la lógica de paradas, pero
+    // no se persiste cada uno).
+    private var lastSaved: Location? = null
+    private var lastSavedAt = 0L
 
     companion object {
         const val ACTION_START = "com.rusertech.mobile.ACTION_START"
@@ -94,24 +103,45 @@ class TrackingService : Service() {
             if (identity == null) { stopSelf(); return@launch }
             userPreferences.setTracking(true)
             _isRunning.value = true
+            // Estado limpio de detección por arranque (el objeto Service puede
+            // reutilizarse entre start/stop).
+            vehicleStoppedSince = 0L; stopEventSent = false; movingSince = 0L
+            lastSaved = null; lastSavedAt = 0L
             locationManager.startUpdates()
 
             locationManager.locations.collect { location ->
                 _lastLocation.value = location
                 val id = identity ?: return@collect
                 val currentTrip = userPreferences.activeTrip.firstOrNull()
-                
-                val point = LocationPoint(
-                    latitude = location.latitude, longitude = location.longitude,
-                    accuracy = location.accuracy, speed = location.speed,
-                    heading = if (location.hasBearing()) location.bearing else 0f,
-                    altitude = location.altitude,
-                    battery = BatteryUtil.getLevel(this@TrackingService),
-                    timestamp = System.currentTimeMillis(),
-                    tripId = currentTrip?.tripId
-                )
-                locationRepository.saveLocation(id, point)
-                updateNotification(point.speedKmh().toInt())
+
+                // Corrección eventos 0,0: si algún evento quedó encolado sin
+                // posición, este fix lo completa y lo despacha.
+                eventRepository.onFixAvailable(id, location.latitude, location.longitude)
+
+                // Filtro de persistencia (antes era el filtro de desplazamiento
+                // del OS): se guarda si se movió, si va a velocidad de marcha o
+                // como heartbeat cada intervalo idle completo. Un vehículo
+                // parado genera ~1 punto/min, no uno por callback.
+                val now = System.currentTimeMillis()
+                val moved = lastSaved?.let { it.distanceTo(location) >= LocationManager.SMALLEST_DISPLACEMENT_M } ?: true
+                val shouldSave = moved ||
+                    location.speed >= LocationManager.SPEED_THRESHOLD_MS ||
+                    now - lastSavedAt >= LocationManager.INTERVAL_IDLE_MS
+                if (shouldSave) {
+                    val point = LocationPoint(
+                        latitude = location.latitude, longitude = location.longitude,
+                        accuracy = location.accuracy, speed = location.speed,
+                        heading = if (location.hasBearing()) location.bearing else 0f,
+                        altitude = location.altitude,
+                        battery = BatteryUtil.getLevel(this@TrackingService),
+                        timestamp = now,
+                        tripId = currentTrip?.tripId
+                    )
+                    locationRepository.saveLocation(id, point)
+                    lastSaved = location
+                    lastSavedAt = now
+                    updateNotification(point.speedKmh().toInt())
+                }
                 checkAutoEvents(location, id, currentTrip?.tripId)
             }
         }
@@ -162,16 +192,44 @@ class TrackingService : Service() {
             eventRepository.createEvent(EventType.LOW_BATTERY, id, location.latitude, location.longitude,
                 metadata = mapOf("battery_level" to battery.toString()), tripId = tripId)
         }
+
         val isMoving = location.speed >= LocationManager.SPEED_THRESHOLD_MS
-        when {
-            !isMoving && wasMoving -> vehicleStoppedSince = now
-            !isMoving && vehicleStoppedSince > 0 && now - vehicleStoppedSince > 5 * 60_000L -> {
+        val driverState = DriverState.fromValue(userPreferences.driverStateSnapshot())
+
+        if (!isMoving) {
+            movingSince = 0L
+            if (vehicleStoppedSince == 0L) vehicleStoppedSince = now
+
+            // FIX-10 supresión inteligente: con una parada DECLARADA
+            // (stopped_*) no hay anomalía — el MOB_STOP automático se calla.
+            // MOB_STOP queda reservado para la parada NO declarada >5 min:
+            // esa es la señal de seguridad.
+            val declared = driverState?.isDeclaredStop == true
+            if (!declared && !stopEventSent && now - vehicleStoppedSince > 5 * 60_000L) {
                 eventRepository.createEvent(EventType.VEHICLE_STOP, id, location.latitude, location.longitude,
                     metadata = mapOf("stop_duration_seconds" to ((now - vehicleStoppedSince) / 1000).toString()), tripId = tripId)
-                vehicleStoppedSince = 0L
+                stopEventSent = true  // un solo MOB_STOP por episodio de parada
+            }
+        } else {
+            vehicleStoppedSince = 0L
+            stopEventSent = false
+
+            // FIX-10 auto-resume: con parada declarada pero el vehículo
+            // moviéndose a velocidad de marcha durante 3 minutos CONTINUOS,
+            // el conductor olvidó reanudar → MOB_RESUME automático y vuelta
+            // a en_route. Evita estados zombis.
+            if (driverState?.isDeclaredStop == true) {
+                if (movingSince == 0L) movingSince = now
+                if (now - movingSince >= 3 * 60_000L) {
+                    userPreferences.setDriverState(DriverState.EN_ROUTE.value)
+                    eventRepository.createEvent(EventType.RESUME, id, location.latitude, location.longitude,
+                        metadata = mapOf("auto" to "true"), tripId = tripId)
+                    movingSince = 0L
+                }
+            } else {
+                movingSince = 0L
             }
         }
-        wasMoving = isMoving
     }
 
     private fun stop() {

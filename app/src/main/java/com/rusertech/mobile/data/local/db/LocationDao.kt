@@ -22,4 +22,8 @@ interface LocationDao {
 
     @Query("SELECT COUNT(*) FROM pending_locations WHERE isSynced = 0")
     fun getUnsyncedCount(): Flow<Int>
+
+    /** Última posición conocida (para eventos emitidos sin fix de GPS). */
+    @Query("SELECT * FROM pending_locations ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getMostRecent(): LocationEntity?
 }
