@@ -37,4 +37,8 @@ interface EventDao {
 
     @Query("DELETE FROM tracking_events WHERE isSynced = 1 AND timestamp < :before")
     suspend fun purgeSynced(before: Long)
+
+    /** FIX-7: purga total en logout — los eventos no llevan identidad propia. */
+    @Query("DELETE FROM tracking_events")
+    suspend fun deleteAll()
 }

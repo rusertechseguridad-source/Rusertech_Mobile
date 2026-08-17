@@ -43,8 +43,10 @@ fun RegistrationScreen(
             modifier = Modifier.size(96.dp).clip(RoundedCornerShape(20.dp))
         )
         Spacer(Modifier.height(20.dp))
-        Text("Rusertech Mobile®", fontSize = 24.sp, fontWeight = FontWeight.W500, color = TextPrimary)
-        Text("Seguridad & Logística", fontSize = 13.sp, color = TextSecondary)
+        // Marca centralizada en strings.xml (auditoría white-label): acá no
+        // vive ningún nombre de marca hardcodeado.
+        Text(stringResource(R.string.app_name_branded), fontSize = 24.sp, fontWeight = FontWeight.W500, color = TextPrimary)
+        Text(stringResource(R.string.app_tagline), fontSize = 13.sp, color = TextSecondary)
 
         Spacer(Modifier.height(28.dp))
 

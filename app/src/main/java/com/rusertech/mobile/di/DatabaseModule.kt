@@ -26,12 +26,19 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
+// FIX-9: la foto de carga se vincula al viaje activo al momento de sacarla.
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE pending_attachments ADD COLUMN tripId TEXT")
+    }
+}
+
 @Module @InstallIn(SingletonComponent::class)
 object DatabaseModule {
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): AppDatabase =
         Room.databaseBuilder(ctx, AppDatabase::class.java, "rusertech_db")
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
 
     @Provides fun provideLocationDao(db: AppDatabase): LocationDao = db.locationDao()

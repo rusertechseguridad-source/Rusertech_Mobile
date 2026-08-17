@@ -26,4 +26,8 @@ interface LocationDao {
     /** Última posición conocida (para eventos emitidos sin fix de GPS). */
     @Query("SELECT * FROM pending_locations ORDER BY timestamp DESC LIMIT 1")
     suspend fun getMostRecent(): LocationEntity?
+
+    /** FIX-7: purga total en logout — los puntos no llevan identidad propia. */
+    @Query("DELETE FROM pending_locations")
+    suspend fun deleteAll()
 }

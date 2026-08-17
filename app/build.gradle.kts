@@ -1,9 +1,23 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
     id("org.jetbrains.kotlin.plugin.serialization")
+}
+
+// ---------------------------------------------------------------------
+// FIX-5: firma release real desde keystore.properties (NO versionado).
+// Plantilla: keystore.properties.example en la raíz del repo.
+// El keystore lo genera Gustavo localmente y NUNCA se commitea:
+//   keytool -genkeypair -v -keystore rusertech-release.jks -alias rusertech \
+//           -keyalg RSA -keysize 4096 -validity 10000
+// ---------------------------------------------------------------------
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
 }
 
 android {
@@ -26,6 +40,20 @@ android {
     // activo, el swap son estas DOS líneas y nada más.
     // La barra final es obligatoria: Retrofit la necesita para el baseUrl.
     // ---------------------------------------------------------------------
+    signingConfigs {
+        create("release") {
+            // Solo se configura si el archivo existe; si falta, el guard de
+            // más abajo hace FALLAR el build release con un mensaje claro —
+            // jamás caer en silencio a la firma debug.
+            if (keystorePropsFile.exists()) {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
@@ -39,7 +67,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -55,6 +83,32 @@ android {
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+// FIX-5: guard del build release. Sin keystore.properties, cualquier tarea
+// de release FALLA acá con instrucciones — nunca un APK "release" firmado
+// con la clave debug rumbo a un tester o a Play Console.
+gradle.taskGraph.whenReady {
+    val releaseRequested = allTasks.any {
+        it.project == project && it.name.contains("Release") &&
+            (it.name.startsWith("assemble") || it.name.startsWith("bundle") || it.name.startsWith("install"))
+    }
+    if (releaseRequested && !keystorePropsFile.exists()) {
+        throw GradleException(
+            """
+            |==========================================================================
+            |Falta keystore.properties en la raíz del repo: el build RELEASE se aborta.
+            |(La alternativa silenciosa era firmar con la clave debug — inaceptable.)
+            |
+            |1. Generá el keystore (una sola vez, backup en dos lugares seguros):
+            |   keytool -genkeypair -v -keystore rusertech-release.jks -alias rusertech \
+            |           -keyalg RSA -keysize 4096 -validity 10000
+            |2. Copiá keystore.properties.example a keystore.properties y completalo.
+            |3. keystore.properties y *.jks están en .gitignore: NUNCA los commitees.
+            |==========================================================================
+            """.trimMargin()
+        )
+    }
 }
 
 dependencies {

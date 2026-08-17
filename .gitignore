@@ -17,3 +17,9 @@ local.properties
 # Exclude agent skills and specs
 .agents/
 RUSERTECH_MOBILE_IMPLEMENTATION_v1.1_COMPLETO.md
+
+# FIX-5: firma release — credenciales y keystore JAMAS versionados
+keystore.properties
+*.jks
+*.keystore
+.idea/

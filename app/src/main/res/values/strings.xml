@@ -1,6 +1,11 @@
 <resources>
+    <!-- ================= MARCA (white-label: editar SOLO esta sección,
+         el theme (Color.kt + colors.xml) y los recursos gráficos) ========= -->
     <string name="app_name">Rusertech Mobile</string>
+    <!-- Nombre con símbolo de marca registrada, para la pantalla de registro -->
+    <string name="app_name_branded">Rusertech Mobile®</string>
     <string name="app_tagline">Seguridad &amp; Logística</string>
+    <!-- ==================================================================== -->
     <string name="register_title">Ingresá tus datos para comenzar</string>
     <string name="register_dni_label">Documento de identidad</string>
     <string name="register_dni_placeholder">DNI, RUT, CPF, cédula…</string>

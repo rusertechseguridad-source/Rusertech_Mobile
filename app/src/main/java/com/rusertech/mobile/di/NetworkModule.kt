@@ -28,9 +28,15 @@ object NetworkModule {
         .writeTimeout(30, TimeUnit.SECONDS).retryOnConnectionFailure(true)
         .addInterceptor(authInterceptor)  // Detecta 401/403 → AuthEventBus (Sección 10.1)
         .apply {
-            // Fix #6: solo headers en debug, sin PII en body
+            // Fix #6: solo headers en debug, sin PII en body.
+            // FIX-8: la API Key se REDACTA — debug apunta a producción, y sin
+            // esto la credencial real del tenant queda en logcat de cualquier
+            // teléfono con una build debug.
             if (BuildConfig.DEBUG) {
-                addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.HEADERS })
+                addInterceptor(HttpLoggingInterceptor().apply {
+                    level = HttpLoggingInterceptor.Level.HEADERS
+                    redactHeader("X-Hub-Api-Key")
+                })
             }
         }.build()
 

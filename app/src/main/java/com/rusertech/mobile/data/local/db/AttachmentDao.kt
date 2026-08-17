@@ -22,4 +22,12 @@ interface AttachmentDao {
 
     @Query("SELECT COUNT(*) FROM pending_attachments WHERE isUploaded = 0")
     fun getPendingCount(): Flow<Int>
+
+    /** FIX-7: rutas locales de TODAS las fotos (para borrar los archivos). */
+    @Query("SELECT localPath FROM pending_attachments")
+    suspend fun getAllLocalPaths(): List<String>
+
+    /** FIX-7: purga total en logout — las fotos no llevan identidad propia. */
+    @Query("DELETE FROM pending_attachments")
+    suspend fun deleteAll()
 }

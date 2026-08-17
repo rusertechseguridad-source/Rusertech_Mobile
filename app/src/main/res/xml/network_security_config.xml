@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FIX-6: cleartext (HTTP sin cifrar) prohibido en toda la app.
+  El backend es HTTPS en debug y en release (BACKEND_BASE_URL apunta a
+  producción en ambos), así que no hace falta ninguna excepción.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

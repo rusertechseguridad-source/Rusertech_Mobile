@@ -1,18 +1,37 @@
 package com.rusertech.mobile.data.repository
 
+import android.content.Context
+import androidx.work.WorkManager
+import com.rusertech.mobile.data.local.db.AttachmentDao
+import com.rusertech.mobile.data.local.db.EventDao
+import com.rusertech.mobile.data.local.db.LocationDao
 import com.rusertech.mobile.data.local.prefs.UserPreferences
 import com.rusertech.mobile.data.remote.api.AuthApi
 import com.rusertech.mobile.data.remote.api.LoginRequest
 import com.rusertech.mobile.domain.model.UserIdentity
+import com.rusertech.mobile.util.NetworkUtil
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class UserRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val prefs: UserPreferences,
-    private val authApi: AuthApi
+    private val authApi: AuthApi,
+    private val locationDao: LocationDao,
+    private val eventDao: EventDao,
+    private val attachmentDao: AttachmentDao,
+    private val locationRepository: LocationRepository,
+    private val eventRepository: EventRepository,
+    private val attachmentRepository: AttachmentRepository,
+    private val networkUtil: NetworkUtil
 ) {
     val userIdentity: Flow<UserIdentity?> = prefs.userIdentity
     val isTracking: Flow<Boolean> = prefs.isTracking
@@ -72,5 +91,50 @@ class UserRepository @Inject constructor(
     suspend fun setTracking(active: Boolean) = prefs.setTracking(active)
     suspend fun snapshot(): UserIdentity? = prefs.snapshot()
     suspend fun isTrackingSnapshot(): Boolean = prefs.isTrackingSnapshot()
-    suspend fun logout() = prefs.clear()
+
+    /**
+     * FIX-7 — Logout con purga de pendientes.
+     *
+     * Los puntos/eventos/fotos pendientes NO llevan identidad propia: el sync
+     * usa la identidad vigente de DataStore. Si un conductor cierra sesión con
+     * pendientes y otro se registra en el mismo teléfono, esos datos se
+     * atribuirían al vehículo del nuevo. Por eso, ANTES de limpiar DataStore:
+     *
+     *  1. Último intento de sync si hay red — best effort, máximo ~10 s.
+     *  2. Borrado de TODO lo no sincronizado (lo que no llegó, se pierde:
+     *     preferible a atribuírselo al conductor equivocado).
+     *  3. Cancelación de los works periódicos (ya no hay identidad que usar).
+     */
+    // NonCancellable: el logout lo lanza un viewModelScope que muere al
+    // navegar a la pantalla de registro. Sin esto, la purga podría quedar por
+    // la mitad (identidad borrada pero pendientes vivos, o al revés).
+    suspend fun logout() = withContext(NonCancellable) {
+        val identity = prefs.snapshot()
+
+        // 1) Best effort: empujar lo pendiente antes de perder la identidad.
+        if (identity != null && identity.apiKey.isNotBlank() && networkUtil.isOnline()) {
+            withTimeoutOrNull(10_000L) {
+                runCatching { eventRepository.syncPending(identity) }
+                runCatching { locationRepository.syncPending(identity) }
+                runCatching { attachmentRepository.syncPending(identity) }
+            }
+        }
+
+        // 2) Purga total: filas + archivos de foto locales.
+        runCatching {
+            attachmentDao.getAllLocalPaths().forEach { path ->
+                runCatching { File(path).delete() }
+            }
+        }
+        locationDao.deleteAll()
+        eventDao.deleteAll()
+        attachmentDao.deleteAll()
+
+        // 3) Sin identidad no hay nada que sincronizar.
+        val wm = WorkManager.getInstance(context)
+        wm.cancelUniqueWork("rusertech_sync")
+        wm.cancelUniqueWork("rusertech_attachment_sync")
+
+        prefs.clear()
+    }
 }
