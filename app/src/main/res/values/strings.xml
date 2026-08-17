@@ -36,6 +36,15 @@
     <string name="permission_background_message">Para que el seguimiento siga funcionando con la app cerrada, seleccioná \"Permitir todo el tiempo\" en el siguiente paso.</string>
     <string name="permission_grant">Conceder permiso</string>
     <string name="permission_open_settings">Abrir configuración</string>
+    <string name="permission_background_later">Ahora no</string>
+    <string name="permission_background_banner">Sin \"Permitir todo el tiempo\", el seguimiento no se reanuda solo tras reiniciar el teléfono. Tocá para configurarlo.</string>
+    <string name="resume_notification_title">Seguimiento pendiente de reanudar</string>
+    <string name="resume_notification_text">Tocá para reanudar el seguimiento del vehículo.</string>
+    <string name="events_sos_hold">Mantené presionado 1,5 segundos</string>
+    <string name="oem_dialog_title">Configuración recomendada para tu teléfono</string>
+    <string name="oem_dialog_open_settings">Abrir ajustes de batería</string>
+    <string name="oem_dialog_ok">Entendido</string>
+    <string name="oem_dialog_dont_show">No volver a mostrar</string>
     <string name="service_channel_name">Seguimiento GPS</string>
     <string name="service_channel_description">Tracking activo de ubicación</string>
     <string name="service_notification_title">Rusertech Mobile</string>

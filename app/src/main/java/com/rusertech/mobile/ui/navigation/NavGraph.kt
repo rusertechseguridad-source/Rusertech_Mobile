@@ -42,6 +42,9 @@ fun RusertechNavHost(navController: NavHostController = rememberNavController())
         composable("tracking") {
             TrackingScreen(
                 onLogout = { navController.navigate("registration") { popUpTo("tracking") { inclusive = true } } },
+                // I2: al finalizar un viaje se vuelve a la selección de modo,
+                // con la sesión intacta — jamás a la pantalla de registro.
+                onTripFinished = { navController.navigate("mode_selection") { popUpTo("tracking") { inclusive = true } } },
                 onNavigateToEvents = { navController.navigate("events") },
                 onNavigateToAttachments = { navController.navigate("attachments") },
                 onNavigateToMap = { navController.navigate("map") }

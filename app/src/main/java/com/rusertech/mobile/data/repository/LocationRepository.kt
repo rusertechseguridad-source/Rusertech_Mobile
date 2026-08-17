@@ -47,18 +47,35 @@ class LocationRepository @Inject constructor(
         val driverState = prefs.driverStateSnapshot()
         val payloads = pending.map { it.toHubPayload(identity, driverState) }
         val response = api.ingestBatch(identity.apiKey, payloads)
-        
+
         // TODO (Track 2): Manejar el cierre remoto de viaje desde el dashboard web.
-        // Si el operador finaliza el viaje (el TripId enviado ya está cerrado), el backend 
+        // Si el operador finaliza el viaje (el TripId enviado ya está cerrado), el backend
         // debería devolver un HTTP 409 Conflict o un 200 OK con { trip_closed: true }.
-        // Al recibir esta respuesta, la app debe limpiar 'UserPreferences.activeTrip' 
+        // Al recibir esta respuesta, la app debe limpiar 'UserPreferences.activeTrip'
         // y detener el TrackingService, informando al conductor "Viaje finalizado por operador".
-        
-        if (!response.isSuccessful) {
-            throw IllegalStateException("Sync falló con HTTP ${response.code()}")
+
+        when {
+            response.isSuccessful -> {
+                dao.markSynced(pending.map { it.id })
+            }
+            // I4 — regla §3.1: un 422 NO se reintenta. Sin esta rama, un lote
+            // inválido (ej.: el operador renombró la patente en la base) se
+            // reintentaría cada 15 min PARA SIEMPRE y, como la cola es FIFO,
+            // taparía todos los puntos nuevos detrás de él.
+            response.code() == 422 -> {
+                response.errorBody()?.close()
+                dao.markSynced(pending.map { it.id })  // cuarentena: no se reenvían
+                android.util.Log.e(
+                    "LocationRepository",
+                    "Lote de ${pending.size} puntos DESCARTADO por 422 (payload inválido para el backend). No se reintenta (§3.1)."
+                )
+            }
+            else -> {
+                response.errorBody()?.close()
+                throw IllegalStateException("Sync falló con HTTP ${response.code()}")
+            }
         }
 
-        dao.markSynced(pending.map { it.id })
         dao.purgeSynced(System.currentTimeMillis() - 86_400_000L)
         pending.size
     }

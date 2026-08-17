@@ -43,6 +43,11 @@ class TrackingViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DriverState.EN_ROUTE)
 
     val isTracking = TrackingService.isRunning
+    // C1: intención de trackear persistida en DataStore. Si es true pero el
+    // servicio no corre (reboot sin permiso de background → notificación),
+    // la pantalla reanuda sola al pasar a foreground.
+    val trackingIntended = userRepository.isTracking
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val lastLocation = TrackingService.lastLocation
     val accessRevoked = TrackingService.accessRevoked  // Sección 10.1 — 403
     val credentialWarning = TrackingService.credentialWarning  // Sección 10.1 — 401

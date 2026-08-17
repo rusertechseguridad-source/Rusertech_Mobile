@@ -37,6 +37,8 @@ class UserPreferences @Inject constructor(
         // FIX-10: estado operativo del conductor (en_route / stopped_*).
         // Sobrevive a reinicios y reboots.
         val DRIVER_STATE = stringPreferencesKey("driver_state")
+        // I7: el conductor pidió no volver a ver el diálogo de configuración OEM.
+        val OEM_SETUP_DISMISSED = booleanPreferencesKey("oem_setup_dismissed")
     }
 
     val userIdentity: Flow<UserIdentity?> = context.dataStore.data.map { prefs ->
@@ -129,6 +131,17 @@ class UserPreferences @Inject constructor(
     }
 
     suspend fun driverStateSnapshot(): String? = driverState.first()
+
+    // ------------------------------------------------------------------
+    // I7: diálogo de configuración OEM (Xiaomi/Samsung/etc.)
+    // ------------------------------------------------------------------
+
+    val oemSetupDismissed: Flow<Boolean> =
+        context.dataStore.data.map { it[Keys.OEM_SETUP_DISMISSED] ?: false }
+
+    suspend fun setOemSetupDismissed() {
+        context.dataStore.edit { it[Keys.OEM_SETUP_DISMISSED] = true }
+    }
 
     suspend fun snapshot(): UserIdentity? = userIdentity.first()
     suspend fun isTrackingSnapshot(): Boolean = isTracking.first()

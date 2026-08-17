@@ -19,11 +19,14 @@
     <uses-feature android:name="android.hardware.location.network" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- M1: backup_rules/data_extraction_rules eliminados — todas sus reglas
+         carecían del atributo path obligatorio (Android las descartaba) y con
+         allowBackup="false" no aplican de todos modos. Si algún día se activa
+         el backup, escribir reglas VÁLIDAS (con path) que excluyan
+         rusertech_prefs (contiene la API Key) y rusertech_db. -->
     <application
         android:name=".RusertechApp"
         android:allowBackup="false"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"

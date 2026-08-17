@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,13 +36,16 @@ import com.rusertech.mobile.util.BatteryUtil
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TrackingScreen(
-    onLogout: () -> Unit, onNavigateToEvents: () -> Unit,
+    onLogout: () -> Unit,
+    onTripFinished: () -> Unit,  // I2: completar viaje NO es desloguear
+    onNavigateToEvents: () -> Unit,
     onNavigateToAttachments: () -> Unit,  // Sección 29
     onNavigateToMap: () -> Unit,
     viewModel: TrackingViewModel = hiltViewModel()
 ) {
     val identity by viewModel.userIdentity.collectAsStateWithLifecycle()
     val isTracking by viewModel.isTracking.collectAsStateWithLifecycle()
+    val trackingIntended by viewModel.trackingIntended.collectAsStateWithLifecycle()
     val lastLocation by viewModel.lastLocation.collectAsStateWithLifecycle()
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     val pendingCount by viewModel.pendingCount.collectAsStateWithLifecycle()
@@ -56,6 +60,88 @@ fun TrackingScreen(
     // FIX-10: estado operativo del conductor + bottom sheet para declararlo.
     val driverState by viewModel.driverState.collectAsStateWithLifecycle()
     var showStateSheet by remember { mutableStateOf(false) }
+
+    // ------------------------------------------------------------------
+    // C1: permiso de ubicación en segundo plano.
+    // Sin "Permitir todo el tiempo", el tracking NO se reanuda tras reboot
+    // (el FGS arrancado desde background no recibe fixes en Android 11+).
+    // No es bloqueante para el uso en primer plano, pero la advertencia
+    // queda siempre visible y el diálogo manda a Settings (en Android 11+
+    // el permiso no se concede por diálogo directo).
+    // ------------------------------------------------------------------
+    var hasBgPermission by remember {
+        mutableStateOf(com.rusertech.mobile.ui.common.PermissionHandler.hasBackgroundLocation(context))
+    }
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        // Re-chequear al volver de Settings (ON_RESUME).
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                hasBgPermission = com.rusertech.mobile.ui.common.PermissionHandler.hasBackgroundLocation(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    var showBgDialog by remember { mutableStateOf(false) }
+    var bgDialogShown by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(isTracking, hasBgPermission) {
+        // Una vez por entrada a la pantalla, al arrancar el tracking sin permiso.
+        if (isTracking && !hasBgPermission && !bgDialogShown) {
+            showBgDialog = true
+            bgDialogShown = true
+        }
+    }
+    val openAppSettings = {
+        context.startActivity(
+            android.content.Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.fromParts("package", context.packageName, null)
+            )
+        )
+    }
+
+    // C1: si el conductor llegó desde la notificación de reanudación del
+    // BootReceiver (tracking pendiente en DataStore, servicio muerto), al
+    // pasar a foreground se reanuda solo.
+    //
+    // UN SOLO intento por entrada a la pantalla: sin este guard, al tocar
+    // "Detener" el flow de DataStore emite false unos milisegundos después
+    // de que el servicio muere, y el efecto vería (intended=true, running=
+    // false) y RELANZARÍA el tracking recién detenido.
+    var autoResumeDone by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(trackingIntended) {
+        if (autoResumeDone) return@LaunchedEffect
+        when {
+            trackingIntended && !isTracking &&
+                com.rusertech.mobile.ui.common.PermissionHandler.hasFineLocation(context) -> {
+                autoResumeDone = true
+                viewModel.startTracking()
+            }
+            // Tracking ya corriendo, o intención sin permiso de ubicación:
+            // no hay nada que reanudar automáticamente en esta entrada.
+            trackingIntended || isTracking -> autoResumeDone = true
+        }
+    }
+
+    if (showBgDialog) {
+        AlertDialog(
+            onDismissRequest = { showBgDialog = false },
+            title = { Text(stringResource(R.string.permission_background_title), color = TextPrimary) },
+            text = { Text(stringResource(R.string.permission_background_message), color = TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = { showBgDialog = false; openAppSettings() }) {
+                    Text(stringResource(R.string.permission_open_settings), color = TechGlowCyan)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBgDialog = false }) {
+                    Text(stringResource(R.string.permission_background_later), color = TextMuted)
+                }
+            },
+            containerColor = DeepSpaceTop
+        )
+    }
 
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
@@ -123,7 +209,9 @@ fun TrackingScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showEndTripDialog = false
-                    viewModel.completeTrip(onSuccess = { onLogout() }) // Navigates to ModeSelection via onLogout / navgraph or we can just pop to ModeSelection 
+                    // I2: completar viaje NO toca la identidad — vuelve a la
+                    // selección de modo con la sesión intacta.
+                    viewModel.completeTrip(onSuccess = { onTripFinished() })
                 }) {
                     Text("Confirmar", color = SOSRed)
                 }
@@ -158,6 +246,21 @@ fun TrackingScreen(
                 color = WarningAmber.copy(alpha = 0.15f)
             ) {
                 Text("Tu API Key no es válida. El tracking sigue activo y guardando localmente.", modifier = Modifier.padding(12.dp), color = WarningAmber, fontSize = 12.sp)
+            }
+        }
+        // C1: advertencia SIEMPRE visible mientras falte "Permitir todo el
+        // tiempo". Tap → Settings de la app.
+        if (!hasBgPermission) {
+            Surface(
+                onClick = openAppSettings,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = WarningAmber.copy(alpha = 0.15f)
+            ) {
+                Text(
+                    stringResource(R.string.permission_background_banner),
+                    modifier = Modifier.padding(12.dp), color = WarningAmber, fontSize = 12.sp
+                )
             }
         }
         // Header

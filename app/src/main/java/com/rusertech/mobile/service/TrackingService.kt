@@ -50,6 +50,11 @@ class TrackingService : Service() {
     private var stopEventSent = false
     // Auto-resume (FIX-10): movimiento continuo con parada declarada.
     private var movingSince = 0L
+    // I5: ancla del episodio de parada. Movimiento = velocidad ≥ umbral O
+    // haberse alejado del ancla más que el radio — cubre fixes sin velocidad
+    // (hasSpeed=false → speed 0.0) sin que el jitter de GPS estacionado
+    // (que oscila alrededor del ancla, no se aleja) dispare falsos positivos.
+    private var stopAnchor: Location? = null
     // Filtro de persistencia (antes vivía en LocationManager como filtro del
     // OS; ahora los puntos quietos SÍ llegan para la lógica de paradas, pero
     // no se persiste cada uno).
@@ -59,10 +64,16 @@ class TrackingService : Service() {
     companion object {
         const val ACTION_START = "com.rusertech.mobile.ACTION_START"
         const val ACTION_STOP = "com.rusertech.mobile.ACTION_STOP"
+        // I5: radio del episodio de parada. 50 m > jitter típico de GPS
+        // estacionado (incluso con precisión de 50 m aceptada por el filtro),
+        // y un vehículo en marcha lo cruza en segundos aun a paso de hombre.
+        private const val STOP_RADIUS_M = 50f
         private const val NOTIFICATION_ID = 1001
         private const val REVOKED_NOTIFICATION_ID = 1002
         private const val CREDENTIAL_WARNING_NOTIFICATION_ID = 1003
-        private const val CHANNEL_ID = "rusertech_tracking_channel"
+        // Público: BootReceiver postea su notificación de reanudación en este
+        // mismo canal (C1) y puede correr antes de que el servicio exista.
+        const val CHANNEL_ID = "rusertech_tracking_channel"
         private val _isRunning = MutableStateFlow(false)
         val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
         private val _lastLocation = MutableStateFlow<Location?>(null)
@@ -106,7 +117,7 @@ class TrackingService : Service() {
             // Estado limpio de detección por arranque (el objeto Service puede
             // reutilizarse entre start/stop).
             vehicleStoppedSince = 0L; stopEventSent = false; movingSince = 0L
-            lastSaved = null; lastSavedAt = 0L
+            stopAnchor = null; lastSaved = null; lastSavedAt = 0L
             locationManager.startUpdates()
 
             locationManager.locations.collect { location ->
@@ -193,12 +204,24 @@ class TrackingService : Service() {
                 metadata = mapOf("battery_level" to battery.toString()), tripId = tripId)
         }
 
-        val isMoving = location.speed >= LocationManager.SPEED_THRESHOLD_MS
+        // I5: decidir movimiento SOLO por velocidad rompía con fixes sin
+        // velocidad (hasSpeed=false → speed 0.0, típico de fixes de red):
+        // MOB_STOP falso en marcha y auto-resume que nunca disparaba.
+        // Criterio nuevo: velocidad ≥ umbral O alejarse del ancla de parada
+        // más que STOP_RADIUS_M. El ancla (fija en el inicio del episodio)
+        // amortigua el jitter: un vehículo estacionado oscila alrededor del
+        // ancla sin alejarse; uno circulando la deja atrás en segundos.
+        val fastEnough = location.speed >= LocationManager.SPEED_THRESHOLD_MS
+        val leftStopRadius = stopAnchor?.let { it.distanceTo(location) > STOP_RADIUS_M } ?: false
+        val isMoving = fastEnough || leftStopRadius
         val driverState = DriverState.fromValue(userPreferences.driverStateSnapshot())
 
         if (!isMoving) {
             movingSince = 0L
-            if (vehicleStoppedSince == 0L) vehicleStoppedSince = now
+            if (vehicleStoppedSince == 0L) {
+                vehicleStoppedSince = now
+                stopAnchor = location  // acá empieza el episodio de parada
+            }
 
             // FIX-10 supresión inteligente: con una parada DECLARADA
             // (stopped_*) no hay anomalía — el MOB_STOP automático se calla.
@@ -213,6 +236,7 @@ class TrackingService : Service() {
         } else {
             vehicleStoppedSince = 0L
             stopEventSent = false
+            stopAnchor = null  // terminó el episodio de parada
 
             // FIX-10 auto-resume: con parada declarada pero el vehículo
             // moviéndose a velocidad de marcha durante 3 minutos CONTINUOS,
@@ -235,7 +259,13 @@ class TrackingService : Service() {
     private fun stop() {
         locationManager.stopUpdates()
         _isRunning.value = false; _lastLocation.value = null
-        serviceScope.launch { userPreferences.setTracking(false) }
+        // I1: el flag se escribe ANTES de cancelar el scope y en un contexto
+        // que ninguna cancelación puede cortar (mismo patrón NonCancellable
+        // que el logout de FIX-7). La versión anterior lo lanzaba en
+        // serviceScope y lo cancelaba en la línea siguiente: si la escritura
+        // perdía la carrera, is_tracking quedaba true y el BootReceiver
+        // resucitaba un tracking que el conductor había detenido.
+        runBlocking { withContext(NonCancellable) { userPreferences.setTracking(false) } }
         collectJob?.cancel(); authWatchJob?.cancel(); serviceScope.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
     }

@@ -141,10 +141,21 @@ class EventRepository @Inject constructor(
         val driverState = prefs.driverStateSnapshot()
         val payloads = pending.map { it.toHubPayload(identity, driverState) }
         val response = api.ingestBatch(identity.apiKey, payloads)
-        if (response.isSuccessful) {
-            dao.markSynced(pending.map { it.id })
-            dao.purgeSynced(System.currentTimeMillis() - 7 * 86_400_000L)
+        when {
+            response.isSuccessful -> dao.markSynced(pending.map { it.id })
+            // I4 — regla §3.1: un 422 NO se reintenta (mismo criterio que
+            // telemetría y fotos): cuarentena del lote para no trabar la cola.
+            response.code() == 422 -> {
+                response.errorBody()?.close()
+                dao.markSynced(pending.map { it.id })
+                android.util.Log.e(
+                    "EventRepository",
+                    "Lote de ${pending.size} eventos DESCARTADO por 422 (payload inválido para el backend). No se reintenta (§3.1)."
+                )
+            }
+            else -> response.errorBody()?.close()
         }
+        dao.purgeSynced(System.currentTimeMillis() - 7 * 86_400_000L)
         pending.size
     }
 

@@ -57,6 +57,12 @@ class AttachmentRepository @Inject constructor(
         val targetFile = File(storageDir, "cargo_${System.currentTimeMillis()}.jpg")
         // Compresión SIEMPRE antes de persistir/subir (objetivo ≤ 500 KB).
         val compressed = ImageCompressor.compressToFile(context, sourceUri, targetFile)
+        // M2: el original de cámara (3–8 MB en cacheDir) ya cumplió su función
+        // — la copia comprimida es la que se persiste y sube. Borrarlo vía el
+        // ContentResolver (el Uri es de nuestro FileProvider, que soporta
+        // delete y borra el archivo subyacente). Se borra también si la
+        // compresión falló: un original sin fila en Room es un huérfano.
+        runCatching { context.contentResolver.delete(sourceUri, null, null) }
         if (!compressed) return false
 
         // Resolución de posición: fix actual → última conocida → desconocida (0,0 local).

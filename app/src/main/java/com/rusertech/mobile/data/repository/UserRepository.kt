@@ -31,8 +31,10 @@ class UserRepository @Inject constructor(
     private val locationRepository: LocationRepository,
     private val eventRepository: EventRepository,
     private val attachmentRepository: AttachmentRepository,
+    private val tripRepository: TripRepository,
     private val networkUtil: NetworkUtil
 ) {
+    private companion object { const val TAG = "UserRepository" }
     val userIdentity: Flow<UserIdentity?> = prefs.userIdentity
     val isTracking: Flow<Boolean> = prefs.isTracking
 
@@ -112,12 +114,21 @@ class UserRepository @Inject constructor(
         val identity = prefs.snapshot()
 
         // 1) Best effort: empujar lo pendiente antes de perder la identidad.
+        //    El cierre de viaje pendiente va PRIMERO (I3): si se purga sin
+        //    enviarse, el viaje queda in_progress en el servidor para siempre
+        //    y el próximo viaje del vehículo lo adoptaría vía 409.
         if (identity != null && identity.apiKey.isNotBlank() && networkUtil.isOnline()) {
             withTimeoutOrNull(10_000L) {
+                runCatching { tripRepository.retryPendingTripClose(identity) }
                 runCatching { eventRepository.syncPending(identity) }
                 runCatching { locationRepository.syncPending(identity) }
                 runCatching { attachmentRepository.syncPending(identity) }
             }
+        }
+        // Si aun así quedó sin cerrar, dejarlo gritado en el log: el operador
+        // lo cierra por SQL durante el piloto.
+        prefs.pendingTripCloseSnapshot()?.let { tripId ->
+            android.util.Log.e(TAG, "Logout con viaje SIN CERRAR en el backend: tripId=$tripId — cerrarlo por SQL (update trips set status='completed', actual_end=now(), driver_state=null where id='$tripId')")
         }
 
         // 2) Purga total: filas + archivos de foto locales.
@@ -126,6 +137,9 @@ class UserRepository @Inject constructor(
                 runCatching { File(path).delete() }
             }
         }
+        // M2: también los originales de cámara que pudieran quedar en cache —
+        // son fotos de la carga del conductor que se va.
+        runCatching { File(context.cacheDir, "cargo_photos").deleteRecursively() }
         locationDao.deleteAll()
         eventDao.deleteAll()
         attachmentDao.deleteAll()

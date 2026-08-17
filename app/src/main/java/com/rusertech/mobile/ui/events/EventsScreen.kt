@@ -3,6 +3,7 @@ package com.rusertech.mobile.ui.events
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,8 +16,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -51,11 +54,59 @@ fun EventsScreen(onBack: () -> Unit, viewModel: EventsViewModel = hiltViewModel(
                     fontSize = 11.sp, color = if (isOnline) SuccessGreen else WarningAmber, fontWeight = FontWeight.W500)
             }
         }
-        // SOS
-        Button(onClick = { viewModel.fireSOS() }, Modifier.fillMaxWidth().height(60.dp),
-            shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = SOSRed)) {
-            Text(feedback?.takeIf { it.contains("SOS") } ?: stringResource(R.string.events_sos),
-                fontSize = 17.sp, fontWeight = FontWeight.W500, color = Color.White)
+        // SOS — I8: long-press de 1,5 s con progreso visible. Un botón de
+        // pánico no puede dispararse por un roce en el bolsillo: cada SOS
+        // manda emails reales a operaciones y al cliente. El tap corto no
+        // hace nada; mantener presionado llena la barra y dispara.
+        var sosPressing by remember { mutableStateOf(false) }
+        var sosProgress by remember { mutableStateOf(0f) }
+        LaunchedEffect(sosPressing) {
+            if (sosPressing) {
+                val steps = 30
+                repeat(steps) {                       // 30 × 50 ms = 1,5 s
+                    kotlinx.coroutines.delay(50)
+                    sosProgress = (it + 1) / steps.toFloat()
+                }
+                viewModel.fireSOS()                   // vibra al disparar
+                sosPressing = false
+                sosProgress = 0f
+            } else {
+                sosProgress = 0f                      // soltó antes: se cancela
+            }
+        }
+        Box(
+            Modifier.fillMaxWidth().height(60.dp).clip(RoundedCornerShape(14.dp))
+                .background(SOSRed.copy(alpha = 0.55f))
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onPress = {
+                            sosPressing = true
+                            tryAwaitRelease()
+                            sosPressing = false
+                        }
+                    )
+                }
+        ) {
+            // Relleno progresivo: el conductor VE que está pasando algo.
+            Box(
+                Modifier.fillMaxWidth(sosProgress).fillMaxHeight()
+                    .background(SOSRed)
+            )
+            Column(
+                Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    feedback?.takeIf { it.contains("SOS") } ?: stringResource(R.string.events_sos),
+                    fontSize = 17.sp, fontWeight = FontWeight.W500, color = Color.White
+                )
+                if (feedback?.contains("SOS") != true) {
+                    Text(
+                        stringResource(R.string.events_sos_hold),
+                        fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f)
+                    )
+                }
+            }
         }
         // Acciones rápidas
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
