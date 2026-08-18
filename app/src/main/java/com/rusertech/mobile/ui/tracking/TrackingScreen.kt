@@ -14,6 +14,9 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+// OJO: rememberSaveable vive en el subpaquete .saveable — el comodín
+// androidx.compose.runtime.* NO lo cubre (bug de compilación de la tanda 4,
+// corregido por Gustavo; espejado acá).
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -150,6 +153,46 @@ fun TrackingScreen(
                          permissions.getOrDefault(android.Manifest.permission.ACCESS_COARSE_LOCATION, false)
         if (locGranted) {
             viewModel.startTracking()
+        }
+    }
+    // Lista de permisos de arranque, compartida por el botón y el auto-inicio
+    // del Modo Viaje (item 1, tanda 5).
+    val startPermissions = remember {
+        val list = mutableListOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            list.add(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        list.toTypedArray()
+    }
+
+    // ------------------------------------------------------------------
+    // Item 1 (tanda 5): crear un viaje ES viajar. Al entrar a esta pantalla
+    // con un viaje activo y el tracking detenido, el tracking arranca solo
+    // (pidiendo permisos si es la primera vez). Antes de este fix, el botón
+    // principal con viaje activo SOLO ofrecía finalizar: el Modo Viaje no
+    // registraba un solo punto.
+    //
+    // Guard de UN intento por entrada a la pantalla: al finalizar el viaje,
+    // completeTrip detiene el servicio unos milisegundos ANTES de limpiar
+    // activeTrip de DataStore — sin el guard, este efecto vería (viaje
+    // activo, tracking detenido) en esa ventana y relanzaría el tracking
+    // en plena finalización.
+    // ------------------------------------------------------------------
+    var tripAutoStartDone by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(activeTrip, isTracking) {
+        if (tripAutoStartDone) return@LaunchedEffect
+        if (activeTrip != null) {
+            tripAutoStartDone = true
+            if (!isTracking) {
+                if (com.rusertech.mobile.ui.common.PermissionHandler.hasFineLocation(context)) {
+                    viewModel.startTracking()
+                } else {
+                    permissionLauncher.launch(startPermissions)
+                }
+            }
         }
     }
     
@@ -385,7 +428,13 @@ fun TrackingScreen(
         }
         Spacer(Modifier.height(10.dp))
         
-        // Botón principal
+        // Botón principal — item 1 (tanda 5): tres estados con viaje.
+        //   viaje + trackeando        → "Finalizar Viaje" (rojo)
+        //   viaje + NO trackeando     → "Reanudar seguimiento" (glow): el
+        //     servicio murió (kill OEM, etc.) — reinicia el tracking SIN
+        //     tocar el viaje. Para finalizar en este estado: reanudar y
+        //     después finalizar (decisión del fix: nunca finalizar a ciegas).
+        //   sin viaje                 → Tracking Libre como siempre
         Box(modifier = Modifier.fillMaxWidth().height(60.dp).clip(RoundedCornerShape(14.dp))
             .background(
                 when {
@@ -395,28 +444,26 @@ fun TrackingScreen(
                 }
             )
             .clickable(enabled = !accessRevoked) {
-                if (activeTrip != null) {
-                    showEndTripDialog = true
-                } else {
-                    if (isTracking) {
-                        viewModel.stopTracking()
-                    } else {
-                        val permissions = mutableListOf(
-                            android.Manifest.permission.ACCESS_FINE_LOCATION,
-                            android.Manifest.permission.ACCESS_COARSE_LOCATION
-                        )
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
+                when {
+                    activeTrip != null && isTracking -> showEndTripDialog = true
+                    activeTrip != null -> {
+                        // Reanudar sin tocar el viaje
+                        if (com.rusertech.mobile.ui.common.PermissionHandler.hasFineLocation(context)) {
+                            viewModel.startTracking()
+                        } else {
+                            permissionLauncher.launch(startPermissions)
                         }
-                        permissionLauncher.launch(permissions.toTypedArray())
                     }
+                    isTracking -> viewModel.stopTracking()
+                    else -> permissionLauncher.launch(startPermissions)
                 }
             },
             contentAlignment = Alignment.Center) {
             Text(
                 when {
                     accessRevoked -> "Acceso desactivado"
-                    activeTrip != null -> "Finalizar Viaje"
+                    activeTrip != null && isTracking -> "Finalizar Viaje"
+                    activeTrip != null -> "Reanudar seguimiento"
                     isTracking -> "Detener Seguimiento Libre"
                     else -> "Iniciar Seguimiento Libre"
                 },

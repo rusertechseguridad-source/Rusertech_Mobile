@@ -41,6 +41,10 @@
     <string name="resume_notification_title">Seguimiento pendiente de reanudar</string>
     <string name="resume_notification_text">Tocá para reanudar el seguimiento del vehículo.</string>
     <string name="events_sos_hold">Mantené presionado 1,5 segundos</string>
+    <string name="attachments_send">Enviar</string>
+    <string name="attachments_discard">Descartar</string>
+    <string name="attachments_saving">Guardando foto…</string>
+    <string name="attachments_preview_hint">Revisá la foto antes de enviarla</string>
     <string name="oem_dialog_title">Configuración recomendada para tu teléfono</string>
     <string name="oem_dialog_open_settings">Abrir ajustes de batería</string>
     <string name="oem_dialog_ok">Entendido</string>

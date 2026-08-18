@@ -11,7 +11,9 @@ import com.rusertech.mobile.domain.model.UserIdentity
 import com.rusertech.mobile.util.ImageCompressor
 import com.rusertech.mobile.util.NetworkUtil
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
@@ -45,6 +47,11 @@ class AttachmentRepository @Inject constructor(
     private val storageDir: File
         get() = File(context.filesDir, "cargo_photos").apply { mkdirs() }
 
+    // Item 3 (tanda 5): TODA la cadena (leer el JPEG original → comprimir →
+    // escribir en filesDir → borrar el original) corre en Dispatchers.IO.
+    // El llamador (viewModelScope) vive en Main: sin este withContext, la
+    // compresión de una foto de 8 MP congelaba la UI varios segundos en el
+    // Redmi de la prueba de campo — el segundo ANR del logcat.
     suspend fun saveAttachment(
         identity: UserIdentity,
         sourceUri: Uri,
@@ -53,7 +60,7 @@ class AttachmentRepository @Inject constructor(
         latitude: Double?,
         longitude: Double?,
         tripId: String?
-    ): Boolean {
+    ): Boolean = withContext(Dispatchers.IO) {
         val targetFile = File(storageDir, "cargo_${System.currentTimeMillis()}.jpg")
         // Compresión SIEMPRE antes de persistir/subir (objetivo ≤ 500 KB).
         val compressed = ImageCompressor.compressToFile(context, sourceUri, targetFile)
@@ -63,7 +70,7 @@ class AttachmentRepository @Inject constructor(
         // delete y borra el archivo subyacente). Se borra también si la
         // compresión falló: un original sin fila en Room es un huérfano.
         runCatching { context.contentResolver.delete(sourceUri, null, null) }
-        if (!compressed) return false
+        if (!compressed) return@withContext false
 
         // Resolución de posición: fix actual → última conocida → desconocida (0,0 local).
         val hasFix = latitude != null && longitude != null && !(latitude == 0.0 && longitude == 0.0)
@@ -86,7 +93,16 @@ class AttachmentRepository @Inject constructor(
         if (networkUtil.isOnline() && identity.apiKey.isNotBlank()) {
             tryUpload(identity, entity.copy(id = id))
         }
-        return true
+        true
+    }
+
+    /**
+     * Item 6 (tanda 5): el conductor descartó la foto en el preview — borrar
+     * el original de cámara sin dejar rastro. En IO, como todo lo de disco.
+     */
+    suspend fun discardCapture(sourceUri: Uri) = withContext(Dispatchers.IO) {
+        runCatching { context.contentResolver.delete(sourceUri, null, null) }
+        Unit
     }
 
     /** Llamado por AttachmentSyncWorker — sube de a una (multipart no soporta batch). */

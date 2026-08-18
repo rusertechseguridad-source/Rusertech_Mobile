@@ -39,6 +39,8 @@ class TrackingService : Service() {
     @Inject lateinit var eventRepository: EventRepository
     @Inject lateinit var userPreferences: UserPreferences
     @Inject lateinit var authEventBus: AuthEventBus
+    // Item 2 (tanda 5): scope de APLICACIÓN, independiente del serviceScope.
+    @Inject @com.rusertech.mobile.di.ApplicationScope lateinit var appScope: CoroutineScope
 
     private var serviceScope: CoroutineScope = newScope()
     private var identity: UserIdentity? = null
@@ -259,13 +261,17 @@ class TrackingService : Service() {
     private fun stop() {
         locationManager.stopUpdates()
         _isRunning.value = false; _lastLocation.value = null
-        // I1: el flag se escribe ANTES de cancelar el scope y en un contexto
-        // que ninguna cancelación puede cortar (mismo patrón NonCancellable
-        // que el logout de FIX-7). La versión anterior lo lanzaba en
-        // serviceScope y lo cancelaba en la línea siguiente: si la escritura
-        // perdía la carrera, is_tracking quedaba true y el BootReceiver
-        // resucitaba un tracking que el conductor había detenido.
-        runBlocking { withContext(NonCancellable) { userPreferences.setTracking(false) } }
+        // I1 mantenida SIN runBlocking (tanda 5). La garantía de I1 es que
+        // esta escritura NO muere con serviceScope.cancel() — y la da el
+        // scope de APLICACIÓN: no es hijo del serviceScope, la cancelación
+        // de abajo no lo toca, y el proceso sigue vivo tras stopSelf().
+        //
+        // ⚠️ NO "arreglar" esto de vuelta a runBlocking: stop() corre en el
+        // hilo principal del servicio, y bloquearlo hasta el fsync de
+        // DataStore fue el ANR de "Finalizar Viaje" en el Redmi de la prueba
+        // de campo (disco lento + umbral de ANR). Si hace falta garantía de
+        // ejecución, la respuesta es un scope que sobreviva — nunca bloquear.
+        appScope.launch { userPreferences.setTracking(false) }
         collectJob?.cancel(); authWatchJob?.cancel(); serviceScope.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
     }

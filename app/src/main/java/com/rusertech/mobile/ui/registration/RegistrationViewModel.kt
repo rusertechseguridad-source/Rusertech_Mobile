@@ -38,10 +38,30 @@ class RegistrationViewModel @Inject constructor(
         networkError = null
     }
     fun onActivationCodeChange(input: String) {
+        // Sin uppercase forzado (decisión de Gustavo): el backend normaliza a
+        // mayúsculas al validar; acá se respeta lo que el conductor tipea.
         activationCode = input.take(128)
         activationError = if (activationCode.length < 4) "Código inválido" else null
         networkError = null
     }
+
+    /**
+     * Item 7 (tanda 5): los códigos se dictan por teléfono y se tipean con
+     * guantes — O/0, I/l/1 y S/5 se confunden (pasó en la prueba de campo
+     * con PILOTO01). Se normalizan los caracteres ambiguos a su dígito para
+     * que AMBAS grafías funcionen. Solo en la app: el backend ya normaliza
+     * mayúsculas al validar, y los códigos reales usan dígitos en esas
+     * posiciones.
+     */
+    private fun normalizeActivationCode(raw: String): String =
+        raw.trim().map { c ->
+            when (c) {
+                'O', 'o' -> '0'
+                'I', 'i', 'l' -> '1'
+                'S', 's' -> '5'
+                else -> c
+            }
+        }.joinToString("")
 
     fun save(onDone: () -> Unit) {
         documentError = IdentityValidator.errorOrNull(documentId)
@@ -51,9 +71,26 @@ class RegistrationViewModel @Inject constructor(
         viewModelScope.launch {
             isLoading = true
             networkError = null
-            val result = userRepository.login(
-                IdentityValidator.normalize(documentId), PlateValidator.normalize(plate), activationCode
-            )
+            val doc = IdentityValidator.normalize(documentId)
+            val plateNorm = PlateValidator.normalize(plate)
+            val rawCode = activationCode.trim()
+            val normalizedCode = normalizeActivationCode(rawCode)
+
+            // Primer intento: código normalizado (cubre "tipeé O donde era 0").
+            var result = userRepository.login(doc, plateNorm, normalizedCode)
+
+            // Fallback: si el backend dice "código inválido" y lo tipeado
+            // difiere de lo normalizado, UN reintento con el código tal cual.
+            // Cubre el caso inverso: el código canónico usa la LETRA (como la
+            // O de PILOTO01) y la normalización lo habría roto. Así "ambas
+            // grafías funcionan" sea cual sea la forma canónica, sin tocar el
+            // backend. Costo: un intento extra del rate limit solo cuando el
+            // primero falló por código inválido.
+            if (result.isFailure && normalizedCode != rawCode &&
+                result.exceptionOrNull()?.message == "Código de activación inválido o expirado"
+            ) {
+                result = userRepository.login(doc, plateNorm, rawCode)
+            }
             isLoading = false
             if (result.isSuccess) {
                 onDone()
