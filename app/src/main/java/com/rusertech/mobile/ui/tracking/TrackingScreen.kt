@@ -75,7 +75,11 @@ fun TrackingScreen(
     var hasBgPermission by remember {
         mutableStateOf(com.rusertech.mobile.ui.common.PermissionHandler.hasBackgroundLocation(context))
     }
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    // A1: con Compose UI 1.7, LocalLifecycleOwner ya no vive en
+    // androidx.compose.ui.platform — se movió a androidx.lifecycle.compose
+    // (lifecycle 2.8+, que este proyecto ya usa). Referenciar el viejo
+    // rompería la compilación con el BOM nuevo.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         // Re-chequear al volver de Settings (ON_RESUME).
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -348,23 +352,42 @@ fun TrackingScreen(
                 color = if (driverState.isDeclaredStop) WarningAmber.copy(alpha = 0.12f) else SurfaceCard,
                 border = BorderStroke(0.5.dp, if (driverState.isDeclaredStop) WarningAmber else SurfaceBorder)
             ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(driverStateIcon(driverState), fontSize = 18.sp)
-                        Spacer(Modifier.width(10.dp))
-                        Column {
-                            Text("Estado", fontSize = 11.sp, color = TextMuted)
+                Column {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(driverStateIcon(driverState), fontSize = 18.sp)
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text("Estado", fontSize = 11.sp, color = TextMuted)
+                                Text(
+                                    driverState.displayName, fontSize = 14.sp, fontWeight = FontWeight.W600,
+                                    color = if (driverState.isDeclaredStop) WarningAmber else TextPrimary
+                                )
+                            }
+                        }
+                        Text("Cambiar", fontSize = 12.sp, color = TechGlowCyan, fontWeight = FontWeight.W500)
+                    }
+                    // A4 (tanda 6): con una parada declarada, volver a "En
+                    // viaje" es UN toque — sin abrir el selector. El conductor
+                    // se olvida siempre, y mientras tanto el MOB_STOP
+                    // automático queda suprimido (se pierde la señal de
+                    // seguridad). El auto-resume por movimiento sigue como red.
+                    if (driverState.isDeclaredStop) {
+                        HorizontalDivider(thickness = 0.5.dp, color = SurfaceBorder)
+                        TextButton(
+                            onClick = { viewModel.declareState(DriverState.EN_ROUTE) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Text(
-                                driverState.displayName, fontSize = 14.sp, fontWeight = FontWeight.W600,
-                                color = if (driverState.isDeclaredStop) WarningAmber else TextPrimary
+                                "▶  Reanudar viaje",
+                                fontSize = 14.sp, fontWeight = FontWeight.W600, color = TechGlowCyan
                             )
                         }
                     }
-                    Text("Cambiar", fontSize = 12.sp, color = TechGlowCyan, fontWeight = FontWeight.W500)
                 }
             }
             Spacer(Modifier.height(16.dp))

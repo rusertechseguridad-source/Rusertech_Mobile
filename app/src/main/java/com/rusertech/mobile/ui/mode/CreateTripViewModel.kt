@@ -6,7 +6,11 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rusertech.mobile.data.local.prefs.UserPreferences
+import com.rusertech.mobile.data.repository.EventRepository
 import com.rusertech.mobile.data.repository.TripRepository
+import com.rusertech.mobile.domain.model.DriverState
+import com.rusertech.mobile.domain.model.EventType
+import com.rusertech.mobile.service.TrackingService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -14,6 +18,7 @@ import javax.inject.Inject
 @HiltViewModel
 class CreateTripViewModel @Inject constructor(
     private val tripRepository: TripRepository,
+    private val eventRepository: EventRepository,
     private val prefs: UserPreferences
 ) : ViewModel() {
 
@@ -72,6 +77,10 @@ class CreateTripViewModel @Inject constructor(
                 isLoading = false
                 return@launch
             }
+            // A5 (tanda 6): capturar el estado operativo PREVIO — persistir el
+            // viaje lo pisa con en_route.
+            val previousState = DriverState.fromValue(prefs.driverStateSnapshot())
+
             // FIX-2: crear viaje REQUIERE red. Solo un tripId real del servidor
             // persiste ActiveTrip; si falla, no queda ningún estado fantasma.
             val result = tripRepository.createTrip(
@@ -84,6 +93,22 @@ class CreateTripViewModel @Inject constructor(
             )
             isLoading = false
             if (result.isSuccess) {
+                // A5: crear el viaje deja el estado en EN_ROUTE (lo hace
+                // persistActiveTrip, también en la base vía el INSERT). Si el
+                // conductor venía de una parada declarada en Tracking Libre,
+                // la transición se hace visible con su evento MOB_RESUME —
+                // sin evento, el dashboard vería el salto de estado sin causa.
+                if (previousState?.isDeclaredStop == true) {
+                    val location = TrackingService.lastLocation.value
+                    eventRepository.createEvent(
+                        type = EventType.RESUME,
+                        identity = identity,
+                        latitude = location?.latitude,
+                        longitude = location?.longitude,
+                        metadata = mapOf("origen" to "creacion_de_viaje"),
+                        tripId = result.getOrNull()?.tripId
+                    )
+                }
                 onSuccess()
             } else {
                 networkError = result.exceptionOrNull()?.message ?: "Error al crear el viaje"

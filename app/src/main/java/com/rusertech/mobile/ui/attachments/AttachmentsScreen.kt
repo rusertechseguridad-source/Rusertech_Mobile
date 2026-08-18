@@ -229,20 +229,11 @@ private fun AttachmentRow(attachment: AttachmentEntity) {
 @Composable
 private fun PhotoPreview(uri: Uri) {
     val context = LocalContext.current
+    // A3 (tanda 6): decode compartido con el compresor — downsampleado, en IO
+    // y CON la rotación EXIF aplicada (una foto vertical se ve vertical acá).
     val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, uri) {
         value = withContext(Dispatchers.IO) {
-            runCatching {
-                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                context.contentResolver.openInputStream(uri)?.use {
-                    android.graphics.BitmapFactory.decodeStream(it, null, bounds)
-                }
-                var sample = 1
-                while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 800) sample *= 2
-                val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
-                context.contentResolver.openInputStream(uri)?.use {
-                    android.graphics.BitmapFactory.decodeStream(it, null, opts)
-                }
-            }.getOrNull()
+            com.rusertech.mobile.util.ImageCompressor.decodeOriented(context, uri, 800)
         }
     }
     val bmp = bitmap

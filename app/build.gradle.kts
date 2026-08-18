@@ -118,8 +118,14 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
     implementation("androidx.activity:activity-compose:1.9.1")
 
-    // Compose
-    val composeBom = platform("androidx.compose:compose-bom:2024.08.00")
+    // Compose — A1 (tanda 6): BOM 2024.08.00 (UI 1.6.8) → 2025.02.00 (UI 1.7.8).
+    // Motivo: crash ACTION_HOVER_EXIT en MIUI (accesibilidad inyecta hover
+    // sintético sin ENTER y 1.6.x lanza IllegalStateException; 3 capturas en
+    // campo, una escaló a SIGABRT). La línea 1.7 reescribió el manejo de
+    // hover. 2025.02.00 es el último BOM de la línea 1.7 = el TECHO sin tocar
+    // la toolchain: Compose 1.8+ (BOM 2025.03+) exige Kotlin 2.0 y el plugin
+    // nuevo de compiler — ese salto es decisión de Gustavo, no de una tanda.
+    val composeBom = platform("androidx.compose:compose-bom:2025.02.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
     implementation("androidx.compose.ui:ui")
