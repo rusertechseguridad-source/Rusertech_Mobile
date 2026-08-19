@@ -44,8 +44,8 @@ class SplashViewModel @Inject constructor(
 
 @Composable
 fun SplashRoute(
-    // Item 7 (tanda 7): se eliminó el parámetro `onRegistered`, que nunca se
-    // usó. Verificado ANTES de borrar (lección del bug del logout: parámetro
+    // Se eliminó el parámetro `onRegistered`, que nunca se
+    // usó. Verificado antes de borrar (a diferencia del logout: parámetro
     // sin uso = posible funcionalidad desconectada): acá NO había
     // funcionalidad perdida — el ruteo del Splash cubre los tres destinos con
     // los callbacks restantes, y el registro navega por SU propio

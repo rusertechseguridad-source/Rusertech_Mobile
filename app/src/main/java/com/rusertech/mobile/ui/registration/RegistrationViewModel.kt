@@ -46,8 +46,8 @@ class RegistrationViewModel @Inject constructor(
     }
 
     /**
-     * Item 7 (tanda 5): los códigos se dictan por teléfono y se tipean con
-     * guantes — O/0, I/l/1 y S/5 se confunden (pasó en la prueba de campo
+     * Los códigos se dictan por teléfono y se tipean con
+     * guantes — O/0, I/l/1 y S/5 se confunden (confirmado en dispositivo
      * con PILOTO01). Se normalizan los caracteres ambiguos a su dígito para
      * que AMBAS grafías funcionen. Solo en la app: el backend ya normaliza
      * mayúsculas al validar, y los códigos reales usan dígitos en esas

@@ -34,7 +34,7 @@ data class HubRawPayload(
     // FIX-10: estado operativo vigente del conductor (en_route / stopped_*).
     // Va en CADA punto para que el dashboard pinte el vehículo por estado.
     @SerialName("DriverState") val driverState: String? = null,
-    // Tanda 7 (item 1): metadata del evento — sub-tipos que la UI captura
+    // Metadata del evento — sub-tipos que la UI captura
     // (categoria del incidente, tipo de checkpoint, lugar de la parada
     // sanitaria, staleLocation, auto, etc.).
     //

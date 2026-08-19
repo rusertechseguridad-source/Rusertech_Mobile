@@ -32,14 +32,22 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.graphics.toArgb
+import com.rusertech.mobile.R
+import com.rusertech.mobile.domain.model.EventType
 import com.rusertech.mobile.ui.theme.*
 import com.rusertech.mobile.service.TrackingService
+import com.rusertech.mobile.util.eventSubtype
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.infowindow.BasicInfoWindow
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
+
+// Espaciado de las flechas de sentido sobre el rastro, en metros de recorrido.
+// Una flecha por punto satura el mapa; cada ~150 m se lee el sentido sin ruido.
+private const val TRAIL_ARROW_SPACING_M = 150.0
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,7 +61,7 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
     val showTrail by viewModel.showTrail.collectAsStateWithLifecycle()
     val trailPoints by viewModel.trailPoints.collectAsStateWithLifecycle()
     val trailEvents by viewModel.trailEvents.collectAsStateWithLifecycle()
-    // Item 3 (tanda 7): error de búsqueda/ruta visible para el conductor.
+    // Error de búsqueda/ruta visible para el conductor (nunca catch mudo).
     val mapError by viewModel.mapError.collectAsStateWithLifecycle()
 
     var hasLocationPermission by remember {
@@ -134,9 +142,9 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                                 drawPath(path, android.graphics.Paint().apply { color = DeepSpaceTop.toArgb(); isAntiAlias = true; style = android.graphics.Paint.Style.STROKE; strokeWidth = 3f })
                             }
 
-                            // Item 7 (tanda 7): setDirectionArrow(person, arrow)
-                            // está deprecado en osmdroid 6.1 — reemplazo
-                            // directo por los setters separados vigentes.
+                            // setDirectionArrow(person, arrow) está deprecado
+                            // en osmdroid 6.1 — reemplazo directo por los
+                            // setters separados vigentes.
                             locationOverlay.setPersonIcon(personBmp)
                             locationOverlay.setDirectionIcon(arrowBmp)
 
@@ -149,14 +157,68 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                         map.overlays.clear()
                         if (myLoc != null) map.overlays.add(myLoc)
 
+                        // Popup con superficie propia (tokens del proyecto) —
+                        // compartido por todos los marcadores del mapa en vez
+                        // del bubble blanco por defecto de osmdroid.
+                        val popup = BasicInfoWindow(R.layout.map_event_popup, map)
+
                         // B3: rastro del recorrido desde Room + marcadores de
                         // estado/evento con la semántica de color de B1.
+                        // Trazo en Deep Space: contrasta sobre los tiles claros
+                        // y reserva los acentos Tech Glow para posición,
+                        // eventos y flechas de sentido.
                         if (showTrail && trailPoints.size > 1) {
                             val trail = Polyline(map)
                             trail.setPoints(trailPoints)
-                            trail.outlinePaint.color = TechGlowCyan.toArgb()
+                            trail.outlinePaint.color = DeepSpaceTop.toArgb()
                             trail.outlinePaint.strokeWidth = 8f
+                            trail.infoWindow = null
                             map.overlays.add(trail)
+
+                            // Flechas de sentido de circulación, espaciadas por
+                            // distancia recorrida.
+                            val arrowIcon = android.graphics.drawable.BitmapDrawable(
+                                map.context.resources, trailArrowBitmap()
+                            )
+                            var sinceArrowM = 0.0
+                            for (i in 1 until trailPoints.size) {
+                                sinceArrowM += trailPoints[i - 1].distanceToAsDouble(trailPoints[i])
+                                if (sinceArrowM >= TRAIL_ARROW_SPACING_M) {
+                                    sinceArrowM = 0.0
+                                    val arrow = Marker(map)
+                                    arrow.position = trailPoints[i]
+                                    arrow.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                    arrow.icon = arrowIcon
+                                    // bearingTo devuelve grados horarios desde el
+                                    // norte; Marker.rotation gira antihorario →
+                                    // signo invertido. Si en dispositivo las
+                                    // flechas apuntan espejadas, es este signo.
+                                    arrow.rotation = -trailPoints[i - 1].bearingTo(trailPoints[i]).toFloat()
+                                    arrow.setInfoWindow(null)
+                                    map.overlays.add(arrow)
+                                }
+                            }
+
+                            // Inicio del rastro y última posición registrada.
+                            val start = Marker(map)
+                            start.position = trailPoints.first()
+                            start.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            start.icon = android.graphics.drawable.BitmapDrawable(
+                                map.context.resources, trailStartBitmap()
+                            )
+                            start.title = "Inicio del recorrido"
+                            start.infoWindow = popup
+                            map.overlays.add(start)
+
+                            val last = Marker(map)
+                            last.position = trailPoints.last()
+                            last.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            last.icon = android.graphics.drawable.BitmapDrawable(
+                                map.context.resources, trailLastBitmap()
+                            )
+                            last.title = "Última posición"
+                            last.infoWindow = popup
+                            map.overlays.add(last)
                         }
                         if (showTrail) {
                             trailEvents.forEach { ev ->
@@ -167,8 +229,13 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                                     map.context.resources,
                                     eventDotBitmap(eventColor(ev.type).toArgb())
                                 )
-                                m.title = com.rusertech.mobile.domain.model.EventType
-                                    .fromCode(ev.type)?.displayName ?: ev.type
+                                // Popup: tipo + sub-tipo de la metadata
+                                // ("Checkpoint · Control policial") y fecha/hora.
+                                val subtype = eventSubtype(ev.metadataJson)
+                                m.title = (EventType.fromCode(ev.type)?.displayName ?: ev.type) +
+                                    (subtype?.let { " · $it" } ?: "")
+                                m.snippet = formatEventTime(ev.timestamp)
+                                m.infoWindow = popup
                                 map.overlays.add(m)
                             }
                         }
@@ -178,6 +245,7 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                             marker.position = dest
                             marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                             marker.title = "Destino"
+                            marker.infoWindow = popup
                             map.overlays.add(marker)
                         }
 
@@ -260,7 +328,7 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                 )
             }
 
-            // Item 3 (tanda 7): el error ya no muere en un catch silencioso.
+            // El error de mapa no muere en un catch silencioso: banner visible.
             mapError?.let { message ->
                 Surface(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -303,14 +371,10 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                 }
             }
 
-            // Item 2 (tanda 7): los resultados eran INVISIBLES — SurfaceCard es
-            // blanco al 6 % de alfa, o sea transparente sobre los tiles claros
-            // del mapa: texto claro sobre fondo claro. La lista ahora tiene
-            // superficie OPACA (DeepSpaceTop), borde para despegarla del mapa
-            // y jerarquía nombre/detalle. Legible con sol directo.
-            // Lección de proceso (dos tandas perdidas en red/parseo): antes de
-            // La lista se superpone al mapa: necesita superficie opaca. Con SurfaceCard
-            // (blanco al 6% de alfa) los resultados eran ilegibles sobre tiles claros.
+            // Superficie OPACA obligatoria: SurfaceCard es blanco al 6 % de
+            // alfa y sobre los tiles claros del mapa la lista queda invisible
+            // (texto claro sobre fondo claro). DeepSpaceTop + borde para
+            // despegarla del mapa + jerarquía nombre/detalle: legible al sol.
             AnimatedVisibility(visible = searchResults.isNotEmpty() && destination == null) {
                 Card(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(max = 250.dp),
@@ -363,3 +427,70 @@ private fun eventDotBitmap(colorInt: Int): android.graphics.Bitmap {
     }
     return bmp
 }
+
+/**
+ * Flecha de sentido del rastro. Dibujada apuntando al NORTE: el marcador la
+ * rota al rumbo real del tramo. Cyan sobre el trazo Deep Space.
+ */
+private fun trailArrowBitmap(): android.graphics.Bitmap {
+    val bmp = android.graphics.Bitmap.createBitmap(30, 30, android.graphics.Bitmap.Config.ARGB_8888)
+    android.graphics.Canvas(bmp).apply {
+        val path = android.graphics.Path().apply {
+            moveTo(15f, 2f); lineTo(27f, 26f); lineTo(15f, 20f); lineTo(3f, 26f); close()
+        }
+        drawPath(path, android.graphics.Paint().apply {
+            color = TechGlowCyan.toArgb(); isAntiAlias = true
+            style = android.graphics.Paint.Style.FILL
+        })
+        drawPath(path, android.graphics.Paint().apply {
+            color = DeepSpaceTop.toArgb(); isAntiAlias = true
+            style = android.graphics.Paint.Style.STROKE; strokeWidth = 2f
+        })
+    }
+    return bmp
+}
+
+/** Inicio del rastro: anillo blanco con centro verde — distinto de los puntos
+ *  de evento (llenos) y del marcador de posición actual (gradiente). */
+private fun trailStartBitmap(): android.graphics.Bitmap {
+    val bmp = android.graphics.Bitmap.createBitmap(32, 32, android.graphics.Bitmap.Config.ARGB_8888)
+    android.graphics.Canvas(bmp).apply {
+        drawCircle(16f, 16f, 13f, android.graphics.Paint().apply {
+            color = android.graphics.Color.WHITE; isAntiAlias = true
+            style = android.graphics.Paint.Style.FILL
+        })
+        drawCircle(16f, 16f, 13f, android.graphics.Paint().apply {
+            color = DeepSpaceTop.toArgb(); isAntiAlias = true
+            style = android.graphics.Paint.Style.STROKE; strokeWidth = 3f
+        })
+        drawCircle(16f, 16f, 6f, android.graphics.Paint().apply {
+            color = TechGlowGreen.toArgb(); isAntiAlias = true
+            style = android.graphics.Paint.Style.FILL
+        })
+    }
+    return bmp
+}
+
+/** Última posición registrada del rastro: disco cyan con borde blanco, más
+ *  grande que los puntos de evento. Con el tracking vivo coincide con el
+ *  marcador de posición del overlay — misma información, sin conflicto. */
+private fun trailLastBitmap(): android.graphics.Bitmap {
+    val bmp = android.graphics.Bitmap.createBitmap(36, 36, android.graphics.Bitmap.Config.ARGB_8888)
+    android.graphics.Canvas(bmp).apply {
+        drawCircle(18f, 18f, 14f, android.graphics.Paint().apply {
+            color = TechGlowCyan.toArgb(); isAntiAlias = true
+            style = android.graphics.Paint.Style.FILL
+        })
+        drawCircle(18f, 18f, 14f, android.graphics.Paint().apply {
+            color = android.graphics.Color.WHITE; isAntiAlias = true
+            style = android.graphics.Paint.Style.STROKE; strokeWidth = 4f
+        })
+    }
+    return bmp
+}
+
+/** Fecha/hora local del evento para el popup del mapa. */
+private fun formatEventTime(timestamp: Long): String =
+    java.time.Instant.ofEpochMilli(timestamp)
+        .atZone(java.time.ZoneId.systemDefault())
+        .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy · HH:mm"))

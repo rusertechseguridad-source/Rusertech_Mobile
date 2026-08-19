@@ -63,19 +63,31 @@ fun RegistrationScreen(
             "Código de activación", "PIN provisto por el operador",
             error = viewModel.activationError, capitalization = KeyboardCapitalization.Characters)
 
-        // Item 6 (tanda 7): camino para el conductor SIN código — versión
+        // Camino para el conductor SIN código — versión
         // ligera, sin backend: abre WhatsApp al operador (o el marcador si
         // WhatsApp no está). El número vive en el bloque MARCA de strings.xml
         // (white-label); vacío = no se muestra nada.
         val operatorPhone = stringResource(R.string.operator_contact_phone)
+        val appName = stringResource(R.string.app_name_branded)
         val context = androidx.compose.ui.platform.LocalContext.current
         if (operatorPhone.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
             Text(stringResource(R.string.register_no_code), fontSize = 12.sp, color = TextMuted)
             androidx.compose.material3.TextButton(onClick = {
+                // Mensaje prellenado: el operador recibe de entrada qué app es
+                // y — si el conductor ya los tipeó — documento y patente, los
+                // datos que necesita para emitir el código. Antes del login no
+                // se conoce el tenant: el nombre de la app es la referencia.
+                val message = buildString {
+                    append("Hola, necesito un código de activación para $appName.")
+                    if (viewModel.documentId.isNotBlank()) append(" Documento: ${viewModel.documentId.trim()}.")
+                    if (viewModel.plate.isNotBlank()) append(" Patente: ${viewModel.plate.trim().uppercase()}.")
+                }
                 val whatsapp = android.content.Intent(
                     android.content.Intent.ACTION_VIEW,
-                    android.net.Uri.parse("https://wa.me/$operatorPhone")
+                    android.net.Uri.parse(
+                        "https://wa.me/$operatorPhone?text=${android.net.Uri.encode(message)}"
+                    )
                 )
                 runCatching { context.startActivity(whatsapp) }.onFailure {
                     // Sin WhatsApp ni navegador: al marcador con el número cargado.

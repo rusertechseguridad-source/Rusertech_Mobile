@@ -19,7 +19,25 @@ interface MapApi {
         @Url url: String, // e.g. "https://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}"
         @Query("overview") overview: String = "full"
     ): OsrmResponse
+
+    /**
+     * Geocodificación inversa — SOLO como fallback del Geocoder nativo de
+     * Android. Nominatim banea IPs por encima de ~1 req/s: el llamador debe
+     * espaciar las llamadas y limitarlas por desplazamiento, nunca por fix.
+     */
+    @GET
+    suspend fun reverseNominatim(
+        @Url url: String = "https://nominatim.openstreetmap.org/reverse",
+        @Query("lat") lat: Double,
+        @Query("lon") lon: Double,
+        @Query("format") format: String = "json"
+    ): NominatimReverseResponse
 }
+
+@Serializable
+data class NominatimReverseResponse(
+    val display_name: String = ""
+)
 
 @Serializable
 data class NominatimResponse(

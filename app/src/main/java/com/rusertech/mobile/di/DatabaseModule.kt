@@ -33,12 +33,21 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
+// Heartbeat de presencia: marca del punto y antigüedad del fix reutilizado,
+// para que el payload lo declare en Meta al momento del envío.
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE pending_locations ADD COLUMN isHeartbeat INTEGER NOT NULL DEFAULT 0")
+        database.execSQL("ALTER TABLE pending_locations ADD COLUMN fixAgeSeconds INTEGER")
+    }
+}
+
 @Module @InstallIn(SingletonComponent::class)
 object DatabaseModule {
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): AppDatabase =
         Room.databaseBuilder(ctx, AppDatabase::class.java, "rusertech_db")
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .build()
 
     @Provides fun provideLocationDao(db: AppDatabase): LocationDao = db.locationDao()

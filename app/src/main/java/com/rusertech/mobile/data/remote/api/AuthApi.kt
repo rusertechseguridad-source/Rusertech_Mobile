@@ -12,10 +12,29 @@ data class LoginRequest(
     val activationCode: String
 )
 
+/**
+ * Configuración operativa por tenant, opcional en la respuesta de login.
+ * Todos los campos son opcionales: cualquier ausencia (campo, objeto entero,
+ * backend sin la feature) se resuelve con los defaults locales de
+ * OperationalConfig. Contrato completo: CONTRATO_CONFIG_OPERATIVA.md.
+ */
+@Serializable
+data class OperationalConfigDto(
+    val heartbeatIntervalMinutes: Int? = null,
+    val stopThresholdMinutes: Int? = null,
+    val intervalMovingSeconds: Int? = null,
+    val intervalIdleSeconds: Int? = null,
+    val minDisplacementMeters: Float? = null,
+    val maxAccuracyMeters: Float? = null,
+    val autoResumeMinutes: Int? = null
+)
+
 @Serializable
 data class LoginResponse(
     val avlUserCode: String,
-    val apiKey: String
+    val apiKey: String,
+    // Opcional: el backend actual no lo envía y la app funciona igual.
+    val config: OperationalConfigDto? = null
 )
 
 interface AuthApi {

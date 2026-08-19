@@ -19,5 +19,11 @@ data class LocationEntity(
     val battery: Int,
     val timestamp: Long,
     val tripId: String? = null,
-    val isSynced: Boolean = false
+    val isSynced: Boolean = false,
+    // Heartbeat de presencia: punto emitido sin fix nuevo, con la última
+    // posición conocida. En el payload viaja como Meta.heartbeat +
+    // staleLocation/staleAgeSeconds (mismo patrón que los eventos sin fix).
+    val isHeartbeat: Boolean = false,
+    // Antigüedad del fix reutilizado al momento de emitir el heartbeat.
+    val fixAgeSeconds: Long? = null
 )

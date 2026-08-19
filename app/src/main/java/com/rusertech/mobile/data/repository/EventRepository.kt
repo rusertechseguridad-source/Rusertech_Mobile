@@ -200,7 +200,7 @@ class EventRepository @Inject constructor(
         speed = 0.0,
         course = 0.0,
         ignition = 1,
-        // Tanda 7 (item 4): nivel de batería REAL al momento del envío —
+        // Nivel de batería REAL al momento del envío —
         // "le queda 8 %" es información accionable para el operador.
         // (Nivel de envío, no de captura: EventEntity no tiene columna de
         // batería y no amerita una migración; el desfasaje típico es de
@@ -210,8 +210,8 @@ class EventRepository @Inject constructor(
         shipment = if (notes.isNotBlank()) notes else null,  // Notas van en Shipment
         tripId = tripId,
         driverState = driverState,
-        // Tanda 7 (item 1): la metadata que la UI captura por fin SALE del
-        // teléfono — como objeto JSON real dentro de raw_payload.
+        // La metadata que la UI captura viaja como objeto JSON real
+        // dentro de raw_payload (ver la decisión documentada en HubRawPayload).
         meta = parseMetadata(metadataJson)
     )
 

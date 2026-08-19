@@ -29,11 +29,11 @@ class AttachmentsViewModel @Inject constructor(
     var notes by mutableStateOf(""); private set
     var lastSaveOk by mutableStateOf<Boolean?>(null); private set
 
-    // Item 6 (tanda 5): la foto tomada queda en PREVIEW hasta que el
+    // La foto tomada queda en PREVIEW hasta que el
     // conductor confirme "Enviar" — nada se encola sin confirmación.
     var pendingPhotoUri by mutableStateOf<Uri?>(null); private set
 
-    // Item 3 (tanda 5): compresión en curso — la UI muestra progreso y
+    // Compresión en curso — la UI muestra progreso y
     // deshabilita los botones mientras tanto.
     var isSaving by mutableStateOf(false); private set
 
@@ -43,7 +43,7 @@ class AttachmentsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     fun onTypeSelected(type: AttachmentType) {
-        // Item 5 (tanda 5): cambiar de categoría limpia la nota. Sin esto,
+        // Cambiar de categoría limpia la nota. Sin esto,
         // una foto de incidente podía salir con la nota de la entrega anterior.
         if (type != selectedType) {
             selectedType = type

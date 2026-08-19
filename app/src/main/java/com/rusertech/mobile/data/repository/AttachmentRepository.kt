@@ -47,11 +47,11 @@ class AttachmentRepository @Inject constructor(
     private val storageDir: File
         get() = File(context.filesDir, "cargo_photos").apply { mkdirs() }
 
-    // Item 3 (tanda 5): TODA la cadena (leer el JPEG original → comprimir →
+    // TODA la cadena (leer el JPEG original → comprimir →
     // escribir en filesDir → borrar el original) corre en Dispatchers.IO.
     // El llamador (viewModelScope) vive en Main: sin este withContext, la
-    // compresión de una foto de 8 MP congelaba la UI varios segundos en el
-    // Redmi de la prueba de campo — el segundo ANR del logcat.
+    // compresión de una foto de 8 MP congela la UI varios segundos y llega
+    // al umbral de ANR en dispositivos de gama media (reproducido en campo).
     suspend fun saveAttachment(
         identity: UserIdentity,
         sourceUri: Uri,
@@ -97,7 +97,7 @@ class AttachmentRepository @Inject constructor(
     }
 
     /**
-     * Item 6 (tanda 5): el conductor descartó la foto en el preview — borrar
+     * El conductor descartó la foto en el preview — borrar
      * el original de cámara sin dejar rastro. En IO, como todo lo de disco.
      */
     suspend fun discardCapture(sourceUri: Uri) = withContext(Dispatchers.IO) {

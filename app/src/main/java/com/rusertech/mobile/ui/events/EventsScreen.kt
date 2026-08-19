@@ -20,9 +20,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-// Extensiones del subpaquete .json — el comodín no las cubre.
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -34,6 +31,7 @@ import com.rusertech.mobile.R
 import com.rusertech.mobile.data.local.db.EventEntity
 import com.rusertech.mobile.domain.model.EventType
 import com.rusertech.mobile.ui.theme.*
+import com.rusertech.mobile.util.eventSubtype
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -230,20 +228,12 @@ fun EventsScreen(onBack: () -> Unit, viewModel: EventsViewModel = hiltViewModel(
     // seguridad), paradas declaradas en azul, reanudación en verde.
     val dotColor = eventColor(event.type)
     val timeStr = remember(event.timestamp) { SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault()).format(Date(event.timestamp)) }
-    // Tanda 7 (item 1): el sub-tipo elegido (categoria/tipo/lugar) se muestra
-    // junto al nombre — antes decía solo "Checkpoint" aunque el conductor
-    // hubiera elegido "control policial".
-    val subtype = remember(event.metadataJson) {
-        runCatching {
-            val obj = kotlinx.serialization.json.Json
-                .parseToJsonElement(event.metadataJson).jsonObject
-            listOf("categoria", "tipo", "lugar").firstNotNullOfOrNull { key ->
-                obj[key]?.jsonPrimitive?.content
-            }
-        }.getOrNull()
-    }
+    // El sub-tipo elegido (categoria/tipo/lugar) se muestra junto al nombre:
+    // "Checkpoint · Control policial". Parseo compartido con el popup del
+    // mapa (util/EventMetadata.kt) — una sola definición del sub-tipo.
+    val subtype = remember(event.metadataJson) { eventSubtype(event.metadataJson) }
     val title = (EventType.fromCode(event.type)?.displayName ?: event.type) +
-        (subtype?.let { " · ${it.replaceFirstChar(Char::uppercase)}" } ?: "")
+        (subtype?.let { " · $it" } ?: "")
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(Modifier.size(8.dp).background(dotColor, CircleShape))
         Column(Modifier.weight(1f)) {

@@ -9,9 +9,11 @@ import androidx.room.RoomDatabase
 //              primer fix de GPS — nunca enviar un evento con lat/lng 0,0).
 // version = 5: tripId en pending_attachments (FIX-9 — la foto se vincula al
 //              viaje activo al momento de sacarla).
+// version = 6: isHeartbeat y fixAgeSeconds en pending_locations (heartbeat
+//              de presencia: punto sin fix nuevo con posición reutilizada).
 @Database(
     entities = [LocationEntity::class, EventEntity::class, AttachmentEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

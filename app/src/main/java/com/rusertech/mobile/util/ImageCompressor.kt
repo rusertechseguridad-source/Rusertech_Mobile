@@ -16,7 +16,7 @@ import java.io.FileOutputStream
  *
  * FIX-9: objetivo ≤ 500 KB por foto (spec), con escalones de calidad.
  *
- * A3 (tanda 6): la cámara escribe el sensor en horizontal y la orientación
+ * A3: la cámara escribe el sensor en horizontal y la orientación
  * real viaja en el tag EXIF — al recomprimir sin leerlo, las fotos verticales
  * quedaban acostadas. Ahora la rotación EXIF se aplica al bitmap ANTES de
  * comprimir (y el preview usa el mismo helper). Se usa android.media.

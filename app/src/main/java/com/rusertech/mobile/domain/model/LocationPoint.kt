@@ -9,7 +9,11 @@ data class LocationPoint(
     val altitude: Double,
     val battery: Int,         // 0..100
     val timestamp: Long,      // milisegundos epoch
-    val tripId: String? = null // null si es Seguimiento Libre
+    val tripId: String? = null, // null si es Seguimiento Libre
+    // Heartbeat de presencia: el punto reutiliza la última posición conocida
+    // porque no hubo fix nuevo dentro del intervalo configurado.
+    val isHeartbeat: Boolean = false,
+    val fixAgeSeconds: Long? = null // antigüedad del fix reutilizado
 ) {
     fun speedKmh(): Float = speed * 3.6f
 }

@@ -9,6 +9,8 @@ import com.rusertech.mobile.domain.model.LocationPoint
 import com.rusertech.mobile.domain.model.UserIdentity
 import com.rusertech.mobile.util.NetworkUtil
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -29,7 +31,8 @@ class LocationRepository @Inject constructor(
             accuracy = point.accuracy, speed = point.speed,
             heading = point.heading, altitude = point.altitude,
             battery = point.battery, timestamp = point.timestamp,
-            tripId = point.tripId
+            tripId = point.tripId,
+            isHeartbeat = point.isHeartbeat, fixAgeSeconds = point.fixAgeSeconds
         )
         val id = dao.insert(entity)
 
@@ -37,6 +40,13 @@ class LocationRepository @Inject constructor(
             tryImmediateSend(identity, entity.copy(id = id))
         }
     }
+
+    /**
+     * Última posición conocida en Room, sincronizada o no. La usa el
+     * heartbeat cuando el servicio arranca sin fix y no tiene nada en
+     * memoria que reportar.
+     */
+    suspend fun lastKnownPoint(): LocationEntity? = dao.getMostRecent()
 
     /** Sincroniza lote de ubicaciones pendientes como HubRawPayload. */
     suspend fun syncPending(identity: UserIdentity): Result<Int> = runCatching {
@@ -110,6 +120,16 @@ class LocationRepository @Inject constructor(
         code = null,  // Sin evento — es telemetría pura
         shipment = null,
         tripId = tripId,
-        driverState = driverState
+        driverState = driverState,
+        // Telemetría pura viaja sin Meta. El heartbeat se declara: posición
+        // reutilizada + antigüedad, mismas claves staleLocation/staleAgeSeconds
+        // que usan los eventos emitidos sin fix.
+        meta = if (isHeartbeat) JsonObject(
+            buildMap {
+                put("heartbeat", JsonPrimitive("true"))
+                put("staleLocation", JsonPrimitive("true"))
+                fixAgeSeconds?.let { put("staleAgeSeconds", JsonPrimitive(it.toString())) }
+            }
+        ) else null
     )
 }

@@ -3,8 +3,12 @@ package com.rusertech.mobile.data.local.prefs
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.rusertech.mobile.data.remote.api.OperationalConfigDto
+import com.rusertech.mobile.domain.model.OperationalConfig
 import com.rusertech.mobile.domain.model.UserIdentity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -39,6 +43,16 @@ class UserPreferences @Inject constructor(
         val DRIVER_STATE = stringPreferencesKey("driver_state")
         // I7: el conductor pidió no volver a ver el diálogo de configuración OEM.
         val OEM_SETUP_DISMISSED = booleanPreferencesKey("oem_setup_dismissed")
+        // Configuración operativa remota (llega en el login, por tenant).
+        // Solo se guardan los valores que el backend envió; lo ausente se
+        // resuelve con los defaults de OperationalConfig al leer.
+        val OP_HEARTBEAT_MIN = intPreferencesKey("op_heartbeat_interval_minutes")
+        val OP_STOP_THRESHOLD_MIN = intPreferencesKey("op_stop_threshold_minutes")
+        val OP_INTERVAL_MOVING_S = intPreferencesKey("op_interval_moving_seconds")
+        val OP_INTERVAL_IDLE_S = intPreferencesKey("op_interval_idle_seconds")
+        val OP_MIN_DISPLACEMENT_M = floatPreferencesKey("op_min_displacement_meters")
+        val OP_MAX_ACCURACY_M = floatPreferencesKey("op_max_accuracy_meters")
+        val OP_AUTO_RESUME_MIN = intPreferencesKey("op_auto_resume_minutes")
     }
 
     val userIdentity: Flow<UserIdentity?> = context.dataStore.data.map { prefs ->
@@ -141,6 +155,65 @@ class UserPreferences @Inject constructor(
 
     suspend fun setOemSetupDismissed() {
         context.dataStore.edit { it[Keys.OEM_SETUP_DISMISSED] = true }
+    }
+
+    // ------------------------------------------------------------------
+    // Configuración operativa remota
+    // ------------------------------------------------------------------
+
+    /**
+     * Configuración operativa efectiva: lo que envió el backend en el último
+     * login, completado con los defaults de [OperationalConfig] para todo lo
+     * que no envió. Si nunca llegó nada, es exactamente el default completo.
+     */
+    val operationalConfig: Flow<OperationalConfig> = context.dataStore.data.map { prefs ->
+        val d = OperationalConfig()
+        OperationalConfig(
+            heartbeatIntervalMinutes = prefs[Keys.OP_HEARTBEAT_MIN] ?: d.heartbeatIntervalMinutes,
+            stopThresholdMinutes = prefs[Keys.OP_STOP_THRESHOLD_MIN] ?: d.stopThresholdMinutes,
+            intervalMovingSeconds = prefs[Keys.OP_INTERVAL_MOVING_S] ?: d.intervalMovingSeconds,
+            intervalIdleSeconds = prefs[Keys.OP_INTERVAL_IDLE_S] ?: d.intervalIdleSeconds,
+            minDisplacementMeters = prefs[Keys.OP_MIN_DISPLACEMENT_M] ?: d.minDisplacementMeters,
+            maxAccuracyMeters = prefs[Keys.OP_MAX_ACCURACY_M] ?: d.maxAccuracyMeters,
+            autoResumeMinutes = prefs[Keys.OP_AUTO_RESUME_MIN] ?: d.autoResumeMinutes,
+        )
+    }
+
+    suspend fun operationalConfigSnapshot(): OperationalConfig = operationalConfig.first()
+
+    /**
+     * Persiste la configuración recibida en el login. Cada login pisa la
+     * anterior por completo: primero se borran todas las claves op_* y después
+     * se guardan solo los campos presentes — así un campo que el backend dejó
+     * de enviar vuelve al default en lugar de quedar congelado en un valor
+     * viejo. Valores fuera de rango se descartan (queda el default): una fila
+     * mal cargada en la base no puede dejar el tracking sin muestreo.
+     */
+    suspend fun saveOperationalConfig(dto: OperationalConfigDto?) {
+        context.dataStore.edit { prefs ->
+            prefs.remove(Keys.OP_HEARTBEAT_MIN)
+            prefs.remove(Keys.OP_STOP_THRESHOLD_MIN)
+            prefs.remove(Keys.OP_INTERVAL_MOVING_S)
+            prefs.remove(Keys.OP_INTERVAL_IDLE_S)
+            prefs.remove(Keys.OP_MIN_DISPLACEMENT_M)
+            prefs.remove(Keys.OP_MAX_ACCURACY_M)
+            prefs.remove(Keys.OP_AUTO_RESUME_MIN)
+            if (dto == null) return@edit
+            dto.heartbeatIntervalMinutes?.takeIf { it in 1..120 }
+                ?.let { prefs[Keys.OP_HEARTBEAT_MIN] = it }
+            dto.stopThresholdMinutes?.takeIf { it in 1..120 }
+                ?.let { prefs[Keys.OP_STOP_THRESHOLD_MIN] = it }
+            dto.intervalMovingSeconds?.takeIf { it in 1..300 }
+                ?.let { prefs[Keys.OP_INTERVAL_MOVING_S] = it }
+            dto.intervalIdleSeconds?.takeIf { it in 1..600 }
+                ?.let { prefs[Keys.OP_INTERVAL_IDLE_S] = it }
+            dto.minDisplacementMeters?.takeIf { it in 0f..500f }
+                ?.let { prefs[Keys.OP_MIN_DISPLACEMENT_M] = it }
+            dto.maxAccuracyMeters?.takeIf { it in 5f..1000f }
+                ?.let { prefs[Keys.OP_MAX_ACCURACY_M] = it }
+            dto.autoResumeMinutes?.takeIf { it in 1..60 }
+                ?.let { prefs[Keys.OP_AUTO_RESUME_MIN] = it }
+        }
     }
 
     suspend fun snapshot(): UserIdentity? = userIdentity.first()

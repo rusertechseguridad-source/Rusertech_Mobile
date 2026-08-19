@@ -21,6 +21,7 @@ import com.rusertech.mobile.data.repository.LocationRepository
 import com.rusertech.mobile.domain.model.DriverState
 import com.rusertech.mobile.domain.model.EventType
 import com.rusertech.mobile.domain.model.LocationPoint
+import com.rusertech.mobile.domain.model.OperationalConfig
 import com.rusertech.mobile.domain.model.UserIdentity
 import com.rusertech.mobile.util.BatteryUtil
 import dagger.hilt.android.AndroidEntryPoint
@@ -39,14 +40,21 @@ class TrackingService : Service() {
     @Inject lateinit var eventRepository: EventRepository
     @Inject lateinit var userPreferences: UserPreferences
     @Inject lateinit var authEventBus: AuthEventBus
-    // Item 2 (tanda 5): scope de APLICACIÓN, independiente del serviceScope.
+    // Scope de APLICACIÓN, independiente del serviceScope: garantiza que las
+    // escrituras críticas sobrevivan a la cancelación del servicio.
     @Inject @com.rusertech.mobile.di.ApplicationScope lateinit var appScope: CoroutineScope
 
     private var serviceScope: CoroutineScope = newScope()
     private var identity: UserIdentity? = null
     private var collectJob: Job? = null
     private var authWatchJob: Job? = null
+    private var heartbeatJob: Job? = null
     private var lastBatteryAlert = 0L
+    // Configuración operativa vigente: snapshot tomado al INICIAR el tracking
+    // (remota del último login o defaults locales). Un cambio de configuración
+    // aplica en el próximo inicio, no en caliente — mantiene una sola fuente
+    // de verdad durante toda la sesión de tracking.
+    private var config = OperationalConfig()
     // Detección de paradas (FIX-10): una parada = un episodio.
     private var vehicleStoppedSince = 0L
     private var stopEventSent = false
@@ -86,7 +94,7 @@ class TrackingService : Service() {
         // Sección 10.1: true cuando el backend respondió 401 (API Key mal formada, NO detiene tracking)
         private val _credentialWarning = MutableStateFlow(false)
         val credentialWarning: StateFlow<Boolean> = _credentialWarning.asStateFlow()
-        // B4 (tanda 6): distancia acumulada de la sesión, en metros — suma de
+        // B4: distancia acumulada de la sesión, en metros — suma de
         // distancias entre puntos consecutivos PERSISTIDOS (los mismos que
         // van a Room). Se reinicia al iniciar el tracking; el cálculo
         // definitivo por viaje vive en el backend, esto es informativo.
@@ -118,16 +126,22 @@ class TrackingService : Service() {
 
         collectJob?.cancel()
         collectJob = serviceScope.launch {
-            identity = userPreferences.snapshot()
-            if (identity == null) { stopSelf(); return@launch }
+            val startIdentity = userPreferences.snapshot()
+            identity = startIdentity
+            if (startIdentity == null) { stopSelf(); return@launch }
             userPreferences.setTracking(true)
             _isRunning.value = true
+            // Configuración operativa: del backend (último login) o defaults.
+            config = userPreferences.operationalConfigSnapshot()
             // Estado limpio de detección por arranque (el objeto Service puede
-            // reutilizarse entre start/stop).
+            // reutilizarse entre start/stop). lastSavedAt arranca en "ahora":
+            // es la línea base del reloj de silencio del heartbeat.
             vehicleStoppedSince = 0L; stopEventSent = false; movingSince = 0L
-            stopAnchor = null; lastSaved = null; lastSavedAt = 0L
+            stopAnchor = null; lastSaved = null
+            lastSavedAt = System.currentTimeMillis()
             _sessionDistanceM.value = 0f  // B4: distancia por sesión
-            locationManager.startUpdates()
+            locationManager.startUpdates(config)
+            launchHeartbeat(startIdentity)
 
             locationManager.locations.collect { location ->
                 _lastLocation.value = location
@@ -140,13 +154,13 @@ class TrackingService : Service() {
 
                 // Filtro de persistencia (antes era el filtro de desplazamiento
                 // del OS): se guarda si se movió, si va a velocidad de marcha o
-                // como heartbeat cada intervalo idle completo. Un vehículo
+                // al completarse un intervalo idle sin guardar. Un vehículo
                 // parado genera ~1 punto/min, no uno por callback.
                 val now = System.currentTimeMillis()
-                val moved = lastSaved?.let { it.distanceTo(location) >= LocationManager.SMALLEST_DISPLACEMENT_M } ?: true
+                val moved = lastSaved?.let { it.distanceTo(location) >= config.minDisplacementMeters } ?: true
                 val shouldSave = moved ||
                     location.speed >= LocationManager.SPEED_THRESHOLD_MS ||
-                    now - lastSavedAt >= LocationManager.INTERVAL_IDLE_MS
+                    now - lastSavedAt >= config.intervalIdleMs
                 if (shouldSave) {
                     // B4: acumular distancia entre puntos persistidos consecutivos.
                     lastSaved?.let { prev ->
@@ -238,10 +252,10 @@ class TrackingService : Service() {
 
             // FIX-10 supresión inteligente: con una parada DECLARADA
             // (stopped_*) no hay anomalía — el MOB_STOP automático se calla.
-            // MOB_STOP queda reservado para la parada NO declarada >5 min:
-            // esa es la señal de seguridad.
+            // MOB_STOP queda reservado para la parada NO declarada más larga
+            // que el umbral configurado: esa es la señal de seguridad.
             val declared = driverState?.isDeclaredStop == true
-            if (!declared && !stopEventSent && now - vehicleStoppedSince > 5 * 60_000L) {
+            if (!declared && !stopEventSent && now - vehicleStoppedSince > config.stopThresholdMs) {
                 eventRepository.createEvent(EventType.VEHICLE_STOP, id, location.latitude, location.longitude,
                     metadata = mapOf("stop_duration_seconds" to ((now - vehicleStoppedSince) / 1000).toString()), tripId = tripId)
                 stopEventSent = true  // un solo MOB_STOP por episodio de parada
@@ -252,12 +266,12 @@ class TrackingService : Service() {
             stopAnchor = null  // terminó el episodio de parada
 
             // FIX-10 auto-resume: con parada declarada pero el vehículo
-            // moviéndose a velocidad de marcha durante 3 minutos CONTINUOS,
-            // el conductor olvidó reanudar → MOB_RESUME automático y vuelta
-            // a en_route. Evita estados zombis.
+            // moviéndose a velocidad de marcha durante autoResumeMinutes
+            // CONTINUOS, el conductor olvidó reanudar → MOB_RESUME automático
+            // y vuelta a en_route. Evita estados zombis.
             if (driverState?.isDeclaredStop == true) {
                 if (movingSince == 0L) movingSince = now
-                if (now - movingSince >= 3 * 60_000L) {
+                if (now - movingSince >= config.autoResumeMs) {
                     userPreferences.setDriverState(DriverState.EN_ROUTE.value)
                     eventRepository.createEvent(EventType.RESUME, id, location.latitude, location.longitude,
                         metadata = mapOf("auto" to "true"), tripId = tripId)
@@ -269,21 +283,98 @@ class TrackingService : Service() {
         }
     }
 
+    /**
+     * Heartbeat de presencia (con el tracking activo, nunca más de
+     * heartbeatIntervalMinutes sin al menos un punto persistido).
+     *
+     * Con fixes fluyendo, el filtro de persistencia ya guarda al menos un
+     * punto por intervalo idle y este job nunca dispara. El heartbeat cubre
+     * el caso restante: ningún fix pasa el filtro de precisión durante
+     * minutos (interior, garaje, cañón urbano) y la plataforma dejaría de
+     * ver al vehículo sin saber si es señal o abandono. Se envía la última
+     * posición conocida marcada como heartbeat con la antigüedad del fix —
+     * el mismo patrón staleLocation de los eventos sin posición.
+     *
+     * Lo que NO hace, a propósito: no pasa por checkAutoEvents (no dispara
+     * MOB_STOP ni toca DriverState), no suma distancia de sesión y no toca
+     * lastSaved (el filtro de desplazamiento sigue anclado al último fix
+     * REAL). Solo reinicia el reloj de silencio (lastSavedAt).
+     */
+    private fun launchHeartbeat(id: UserIdentity) {
+        heartbeatJob?.cancel()
+        heartbeatJob = serviceScope.launch {
+            while (isActive) {
+                val wait = config.heartbeatIntervalMs - (System.currentTimeMillis() - lastSavedAt)
+                if (wait > 0) {
+                    delay(wait)
+                } else if (!emitHeartbeat(id)) {
+                    // Sin ninguna posición que reportar (instalación nueva que
+                    // jamás obtuvo un fix): esperar el intervalo completo en
+                    // vez de reintentar en loop.
+                    delay(config.heartbeatIntervalMs)
+                }
+            }
+        }
+    }
+
+    /** @return false si no existe ninguna posición conocida para reportar. */
+    private suspend fun emitHeartbeat(id: UserIdentity): Boolean {
+        val now = System.currentTimeMillis()
+        val tripId = userPreferences.activeTrip.firstOrNull()?.tripId
+
+        // Fuente: último punto persistido en memoria; si el servicio recién
+        // arranca sin fix, la última posición que quedó en Room.
+        val source = lastSaved ?: _lastLocation.value
+        val point = if (source != null) {
+            LocationPoint(
+                latitude = source.latitude, longitude = source.longitude,
+                accuracy = source.accuracy,
+                // Sin fix nuevo no hay velocidad ni rumbo medibles.
+                speed = 0f, heading = 0f,
+                altitude = source.altitude,
+                battery = BatteryUtil.getLevel(this),
+                // timestamp = ahora: el dedupe del backend trabaja por
+                // timestamp, así el heartbeat nunca colisiona con el punto
+                // original del que toma las coordenadas.
+                timestamp = now,
+                tripId = tripId,
+                isHeartbeat = true,
+                fixAgeSeconds = (now - source.time) / 1000
+            )
+        } else {
+            val lastKnown = locationRepository.lastKnownPoint() ?: return false
+            LocationPoint(
+                latitude = lastKnown.latitude, longitude = lastKnown.longitude,
+                accuracy = lastKnown.accuracy, speed = 0f, heading = 0f,
+                altitude = lastKnown.altitude,
+                battery = BatteryUtil.getLevel(this),
+                timestamp = now,
+                tripId = tripId,
+                isHeartbeat = true,
+                fixAgeSeconds = (now - lastKnown.timestamp) / 1000
+            )
+        }
+        locationRepository.saveLocation(id, point)
+        lastSavedAt = now
+        return true
+    }
+
     private fun stop() {
         locationManager.stopUpdates()
         _isRunning.value = false; _lastLocation.value = null
-        // I1 mantenida SIN runBlocking (tanda 5). La garantía de I1 es que
-        // esta escritura NO muere con serviceScope.cancel() — y la da el
-        // scope de APLICACIÓN: no es hijo del serviceScope, la cancelación
-        // de abajo no lo toca, y el proceso sigue vivo tras stopSelf().
+        // I1 SIN runBlocking. La garantía de I1 es que esta escritura NO
+        // muere con serviceScope.cancel() — y la da el scope de APLICACIÓN:
+        // no es hijo del serviceScope, la cancelación de abajo no lo toca, y
+        // el proceso sigue vivo tras stopSelf().
         //
-        // ⚠️ NO "arreglar" esto de vuelta a runBlocking: stop() corre en el
-        // hilo principal del servicio, y bloquearlo hasta el fsync de
-        // DataStore fue el ANR de "Finalizar Viaje" en el Redmi de la prueba
-        // de campo (disco lento + umbral de ANR). Si hace falta garantía de
-        // ejecución, la respuesta es un scope que sobreviva — nunca bloquear.
+        // ⚠️ NO volver esto a runBlocking: stop() corre en el hilo principal
+        // del servicio, y bloquearlo hasta el fsync de DataStore produce ANR
+        // en dispositivos con almacenamiento lento (reproducido en campo).
+        // Si hace falta garantía de ejecución, la respuesta es un scope que
+        // sobreviva — nunca bloquear el main.
         appScope.launch { userPreferences.setTracking(false) }
-        collectJob?.cancel(); authWatchJob?.cancel(); serviceScope.cancel()
+        collectJob?.cancel(); authWatchJob?.cancel(); heartbeatJob?.cancel()
+        serviceScope.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
     }
 

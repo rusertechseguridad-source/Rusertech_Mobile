@@ -77,13 +77,13 @@ class CreateTripViewModel @Inject constructor(
                 isLoading = false
                 return@launch
             }
-            // A5 (tanda 6): capturar el estado operativo PREVIO — persistir el
+            // A5: capturar el estado operativo PREVIO — persistir el
             // viaje lo pisa con en_route.
             val previousState = DriverState.fromValue(prefs.driverStateSnapshot())
 
             // FIX-2: crear viaje REQUIERE red. Solo un tripId real del servidor
             // persiste ActiveTrip; si falla, no queda ningún estado fantasma.
-            // B7 (tanda 6): origen, destino y tipo de carga normalizados a
+            // B7: origen, destino y tipo de carga normalizados a
             // MAYÚSCULAS al enviar — consistencia en el dashboard sin forzar
             // el teclado del conductor.
             val result = tripRepository.createTrip(

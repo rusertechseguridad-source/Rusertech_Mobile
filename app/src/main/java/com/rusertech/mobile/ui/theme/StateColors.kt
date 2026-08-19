@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.Color
 import com.rusertech.mobile.domain.model.DriverState
 
 /**
- * B1 (tanda 6) — semántica de color de estados y eventos, en UN solo lugar.
+ * B1 — semántica de color de estados y eventos, en UN solo lugar.
  *
  *  - EN_ROUTE           → verde Tech Glow (circulando, todo normal)
  *  - stopped_* (declaradas) → azul Tech Glow #2AB3FF: detenido pero

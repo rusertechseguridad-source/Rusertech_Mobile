@@ -30,12 +30,25 @@ class MapViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
-    // Item 3 (tanda 7): estado de error visible. El catch silencioso de acá
-    // ocultó el 403 de Nominatim durante semanas (M6) y después desvió el
-    // diagnóstico del bug de contraste. Un error que el conductor no ve y el
-    // log no registra no existe para nadie — hasta que sí.
+    // Estado de error visible para el conductor. Un error que la pantalla no
+    // muestra y el log no registra no existe para nadie: acá siempre se
+    // loguea Y se expone, con la causa diferenciada (sin red / timeout /
+    // servicio) para que la reacción del conductor sea la correcta.
     private val _mapError = MutableStateFlow<String?>(null)
     val mapError = _mapError.asStateFlow()
+
+    /**
+     * Mensaje según la causa real del fallo: sin red no tiene sentido
+     * reintentar ya; un timeout sí; un error del servicio es ajeno al
+     * teléfono. UnknownHost/Connect = sin salida a internet (DNS o socket
+     * rechazado); SocketTimeout = red viva pero lenta o servicio saturado.
+     */
+    private fun mapErrorMessage(e: Exception, action: String): String = when (e) {
+        is java.net.UnknownHostException,
+        is java.net.ConnectException -> "Sin conexión a internet: no se pudo $action"
+        is java.net.SocketTimeoutException -> "La red está lenta: no se pudo $action, reintentá"
+        else -> "El servicio de mapas falló al $action, probá más tarde"
+    }
 
     private val _searchResults = MutableStateFlow<List<NominatimResponse>>(emptyList())
     val searchResults = _searchResults.asStateFlow()
@@ -125,7 +138,7 @@ class MapViewModel @Inject constructor(
                 _searchResults.value = results
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "Búsqueda de dirección falló: \"$query\"", e)
-                _mapError.value = "No se pudo buscar la dirección"
+                _mapError.value = mapErrorMessage(e, "buscar la dirección")
             } finally {
                 _isLoading.value = false
             }
@@ -160,7 +173,7 @@ class MapViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "Cálculo de ruta falló", e)
-                _mapError.value = "No se pudo calcular la ruta"
+                _mapError.value = mapErrorMessage(e, "calcular la ruta")
             }
         }
     }

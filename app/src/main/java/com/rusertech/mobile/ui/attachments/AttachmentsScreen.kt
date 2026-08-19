@@ -222,14 +222,14 @@ private fun AttachmentRow(attachment: AttachmentEntity) {
 }
 
 /**
- * Preview de la foto tomada (item 6). El decode va SIEMPRE a Dispatchers.IO
- * con downsampling a ~800 px — decodificar 8 MP en el hilo principal es
- * exactamente la clase de congelamiento que esta tanda vino a matar (item 3).
+ * Preview de la foto tomada. El decode va SIEMPRE a Dispatchers.IO con
+ * downsampling a ~800 px — decodificar 8 MP en el hilo principal congela
+ * la UI hasta el umbral de ANR.
  */
 @Composable
 private fun PhotoPreview(uri: Uri) {
     val context = LocalContext.current
-    // A3 (tanda 6): decode compartido con el compresor — downsampleado, en IO
+    // A3: decode compartido con el compresor — downsampleado, en IO
     // y CON la rotación EXIF aplicada (una foto vertical se ve vertical acá).
     val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, uri) {
         value = withContext(Dispatchers.IO) {

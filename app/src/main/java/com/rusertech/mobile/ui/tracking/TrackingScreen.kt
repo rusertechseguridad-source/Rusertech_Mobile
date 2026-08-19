@@ -14,9 +14,8 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-// OJO: rememberSaveable vive en el subpaquete .saveable — el comodín
-// androidx.compose.runtime.* NO lo cubre (bug de compilación de la tanda 4,
-// corregido por Gustavo; espejado acá).
+// rememberSaveable vive en el subpaquete .saveable: el comodín
+// androidx.compose.runtime.* NO lo cubre y sin este import no compila.
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +50,7 @@ fun TrackingScreen(
     val isTracking by viewModel.isTracking.collectAsStateWithLifecycle()
     val trackingIntended by viewModel.trackingIntended.collectAsStateWithLifecycle()
     val lastLocation by viewModel.lastLocation.collectAsStateWithLifecycle()
+    val currentAddress by viewModel.currentAddress.collectAsStateWithLifecycle()
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     val pendingCount by viewModel.pendingCount.collectAsStateWithLifecycle()
     val accessRevoked by viewModel.accessRevoked.collectAsStateWithLifecycle()
@@ -169,7 +169,7 @@ fun TrackingScreen(
         }
     }
     // Lista de permisos de arranque, compartida por el botón y el auto-inicio
-    // del Modo Viaje (item 1, tanda 5).
+    // del Modo Viaje.
     val startPermissions = remember {
         val list = mutableListOf(
             android.Manifest.permission.ACCESS_FINE_LOCATION,
@@ -182,7 +182,7 @@ fun TrackingScreen(
     }
 
     // ------------------------------------------------------------------
-    // Item 1 (tanda 5): crear un viaje ES viajar. Al entrar a esta pantalla
+    // Crear un viaje ES viajar. Al entrar a esta pantalla
     // con un viaje activo y el tracking detenido, el tracking arranca solo
     // (pidiendo permisos si es la primera vez). Antes de este fix, el botón
     // principal con viaje activo SOLO ofrecía finalizar: el Modo Viaje no
@@ -224,7 +224,7 @@ fun TrackingScreen(
                     fontSize = 12.sp, color = TextSecondary
                 )
                 Spacer(Modifier.height(16.dp))
-                // Item 5 (tanda 7): filas COMPACTAS — ícono + título en una
+                // Filas COMPACTAS — ícono + título en una
                 // línea; la descripción solo en la opción seleccionada. El
                 // área táctil se mantiene ≥48 dp (guantes): el padding
                 // vertical de 14 dp + la línea de texto lo garantizan.
@@ -463,7 +463,7 @@ fun TrackingScreen(
                         }
                         Text("Cambiar", fontSize = 12.sp, color = TechGlowCyan, fontWeight = FontWeight.W500)
                     }
-                    // A4 (tanda 6): con una parada declarada, volver a "En
+                    // A4: con una parada declarada, volver a "En
                     // viaje" es UN toque — sin abrir el selector. El conductor
                     // se olvida siempre, y mientras tanto el MOB_STOP
                     // automático queda suprimido (se pierde la señal de
@@ -525,8 +525,20 @@ fun TrackingScreen(
         }
         lastLocation?.let { loc ->
             Spacer(Modifier.height(8.dp))
-            Text("${"%.6f".format(loc.latitude)}, ${"%.6f".format(loc.longitude)}",
-                fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextMuted)
+            Text("Ubicación actual", fontSize = 11.sp, color = TextMuted)
+            // Dirección legible si el geocoding la resolvió; si no,
+            // coordenadas — el dato nunca desaparece por un fallo de red.
+            val address = currentAddress
+            if (address != null) {
+                Text(
+                    address, fontSize = 12.sp, color = TextSecondary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+            } else {
+                Text("${"%.6f".format(loc.latitude)}, ${"%.6f".format(loc.longitude)}",
+                    fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextMuted)
+            }
         }
         Spacer(Modifier.weight(1f))
         
@@ -566,7 +578,7 @@ fun TrackingScreen(
         }
         Spacer(Modifier.height(10.dp))
         
-        // Botón principal — item 1 (tanda 5): tres estados con viaje.
+        // Botón principal: tres estados con viaje.
         //   viaje + trackeando        → "Finalizar Viaje" (rojo)
         //   viaje + NO trackeando     → "Reanudar seguimiento" (glow): el
         //     servicio murió (kill OEM, etc.) — reinicia el tracking SIN

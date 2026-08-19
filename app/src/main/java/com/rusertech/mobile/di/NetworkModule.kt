@@ -62,7 +62,7 @@ object NetworkModule {
     fun provideMapApi(json: Json): com.rusertech.mobile.data.remote.api.MapApi {
         val publicOkHttp = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS)
-            // B2 (tanda 6) / M6: Nominatim EXIGE un User-Agent identificable —
+            // B2 / M6: Nominatim EXIGE un User-Agent identificable —
             // sin él, OSM devuelve 403 esporádico y la búsqueda "no funciona".
             // Aplica también a OSRM. Es la causa raíz de la búsqueda muerta.
             .addInterceptor { chain ->

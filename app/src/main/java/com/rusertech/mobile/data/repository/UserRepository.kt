@@ -63,6 +63,10 @@ class UserRepository @Inject constructor(
                 Result.failure(Exception("Respuesta inválida del servidor, intentá de nuevo"))
             } else {
                 prefs.saveIdentity(documentId, plate, activationCode, body.avlUserCode, body.apiKey)
+                // Configuración operativa por tenant: se guarda lo que vino
+                // (puede ser null — el backend actual no la envía y la app
+                // opera con los defaults locales de OperationalConfig).
+                prefs.saveOperationalConfig(body.config)
                 Result.success(Unit)
             }
         } else {

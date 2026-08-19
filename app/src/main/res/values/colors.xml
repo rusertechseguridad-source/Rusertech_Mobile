@@ -4,6 +4,8 @@
     <color name="deep_space_bottom">#FF2B2F6E</color>
     <color name="tech_glow_green">#FF7CFF3C</color>
     <color name="tech_glow_cyan">#FF33E1A1</color>
+    <!-- Borde de superficies sobre el mapa: cyan al 40% de alfa -->
+    <color name="tech_glow_cyan_40">#6633E1A1</color>
     <color name="tech_glow_blue">#FF2AB3FF</color>
     <color name="text_primary">#FFE5E7EB</color>
     <color name="text_secondary">#FF9CA3AF</color>
