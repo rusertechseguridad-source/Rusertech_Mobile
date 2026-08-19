@@ -1,5 +1,6 @@
 package com.rusertech.mobile.data.repository
 
+import android.content.Context
 import com.rusertech.mobile.data.local.db.EventDao
 import com.rusertech.mobile.data.local.db.EventEntity
 import com.rusertech.mobile.data.local.db.LocationDao
@@ -8,8 +9,15 @@ import com.rusertech.mobile.data.remote.api.HubRawPayload
 import com.rusertech.mobile.data.remote.api.TrackingApi
 import com.rusertech.mobile.domain.model.EventType
 import com.rusertech.mobile.domain.model.UserIdentity
+import com.rusertech.mobile.util.BatteryUtil
 import com.rusertech.mobile.util.NetworkUtil
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+// OJO: jsonObject es una extensión del subpaquete .json — el comodín
+// kotlinx.serialization.* NO la cubre (familia de bugs de imports).
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -31,6 +39,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class EventRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val dao: EventDao,
     private val locationDao: LocationDao,
     private val api: TrackingApi,
@@ -191,10 +200,24 @@ class EventRepository @Inject constructor(
         speed = 0.0,
         course = 0.0,
         ignition = 1,
-        battery = null,
+        // Tanda 7 (item 4): nivel de batería REAL al momento del envío —
+        // "le queda 8 %" es información accionable para el operador.
+        // (Nivel de envío, no de captura: EventEntity no tiene columna de
+        // batería y no amerita una migración; el desfasaje típico es de
+        // minutos y el dato sigue siendo operativamente útil.)
+        battery = BatteryUtil.getLevel(context).takeIf { it >= 0 },
         code = type,  // MOB_SOS, MOB_CHKPT, MOB_COMM, MOB_INCIDENT, etc.
         shipment = if (notes.isNotBlank()) notes else null,  // Notas van en Shipment
         tripId = tripId,
-        driverState = driverState
+        driverState = driverState,
+        // Tanda 7 (item 1): la metadata que la UI captura por fin SALE del
+        // teléfono — como objeto JSON real dentro de raw_payload.
+        meta = parseMetadata(metadataJson)
     )
+
+    /** Room guarda la metadata como string JSON; el payload la lleva como objeto. */
+    private fun parseMetadata(metadataJson: String): JsonObject? {
+        if (metadataJson.isBlank() || metadataJson == "{}") return null
+        return runCatching { Json.parseToJsonElement(metadataJson).jsonObject }.getOrNull()
+    }
 }

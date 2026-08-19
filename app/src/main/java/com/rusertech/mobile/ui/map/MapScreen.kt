@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -52,6 +53,8 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
     val showTrail by viewModel.showTrail.collectAsStateWithLifecycle()
     val trailPoints by viewModel.trailPoints.collectAsStateWithLifecycle()
     val trailEvents by viewModel.trailEvents.collectAsStateWithLifecycle()
+    // Item 3 (tanda 7): error de búsqueda/ruta visible para el conductor.
+    val mapError by viewModel.mapError.collectAsStateWithLifecycle()
 
     var hasLocationPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
@@ -131,8 +134,11 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                                 drawPath(path, android.graphics.Paint().apply { color = DeepSpaceTop.toArgb(); isAntiAlias = true; style = android.graphics.Paint.Style.STROKE; strokeWidth = 3f })
                             }
 
+                            // Item 7 (tanda 7): setDirectionArrow(person, arrow)
+                            // está deprecado en osmdroid 6.1 — reemplazo
+                            // directo por los setters separados vigentes.
                             locationOverlay.setPersonIcon(personBmp)
-                            locationOverlay.setDirectionArrow(personBmp, arrowBmp)
+                            locationOverlay.setDirectionIcon(arrowBmp)
 
                             overlays.add(locationOverlay)
                         }
@@ -180,8 +186,10 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                             polyline.setPoints(routePoints)
                             // B2: ruta sugerida en azul de paleta — distinta del
                             // rastro real (verde-menta) para no confundirlos.
-                            polyline.color = TechGlowBlue.toArgb()
-                            polyline.width = 10f
+                            // Item 7: setters color/width deprecados → outlinePaint
+                            // (igual que el rastro de B3).
+                            polyline.outlinePaint.color = TechGlowBlue.toArgb()
+                            polyline.outlinePaint.strokeWidth = 10f
                             map.overlays.add(polyline)
 
                             if (routePoints.size > 1) {
@@ -252,6 +260,21 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                 )
             }
 
+            // Item 3 (tanda 7): el error ya no muere en un catch silencioso.
+            mapError?.let { message ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    color = WarningAmber.copy(alpha = 0.9f)
+                ) {
+                    Text(
+                        message, Modifier.padding(10.dp),
+                        color = DeepSpaceTop, fontSize = 12.sp, fontWeight = FontWeight.W600
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+
             // B3: switch para mostrar/ocultar el rastro del recorrido.
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp),
@@ -280,25 +303,44 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                 }
             }
 
+            // Item 2 (tanda 7): los resultados eran INVISIBLES — SurfaceCard es
+            // blanco al 6 % de alfa, o sea transparente sobre los tiles claros
+            // del mapa: texto claro sobre fondo claro. La lista ahora tiene
+            // superficie OPACA (DeepSpaceTop), borde para despegarla del mapa
+            // y jerarquía nombre/detalle. Legible con sol directo.
+            // Lección de proceso (dos tandas perdidas en red/parseo): antes de
+            // La lista se superpone al mapa: necesita superficie opaca. Con SurfaceCard
+            // (blanco al 6% de alfa) los resultados eran ilegibles sobre tiles claros.
             AnimatedVisibility(visible = searchResults.isNotEmpty() && destination == null) {
                 Card(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(max = 250.dp),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceCard),
-                    shape = RoundedCornerShape(12.dp)
+                    colors = CardDefaults.cardColors(containerColor = DeepSpaceTop),  // OPACO
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, TechGlowCyan.copy(alpha = 0.4f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
                 ) {
                     LazyColumn(Modifier.fillMaxWidth()) {
                         items(searchResults) { result ->
+                            // Nominatim devuelve una sola línea larga: el primer
+                            // segmento es el nombre, el resto es el detalle.
+                            val name = result.display_name.substringBefore(",")
+                            val detail = result.display_name.substringAfter(",", "").trim()
                             Row(
                                 Modifier.fillMaxWidth().clickable {
                                     viewModel.setDestination(result.lat.toDouble(), result.lon.toDouble())
-                                }.padding(16.dp),
+                                }.padding(horizontal = 16.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.LocationOn, contentDescription = null, tint = InfoBlue, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.LocationOn, contentDescription = null, tint = TechGlowCyan, modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(12.dp))
-                                Text(result.display_name, fontSize = 14.sp, color = TextPrimary, maxLines = 2)
+                                Column(Modifier.weight(1f)) {
+                                    Text(name, fontSize = 14.sp, fontWeight = FontWeight.W600, color = TextPrimary, maxLines = 1)
+                                    if (detail.isNotBlank()) {
+                                        Text(detail, fontSize = 12.sp, color = TextSecondary, maxLines = 1)
+                                    }
+                                }
                             }
-                            HorizontalDivider(color = SurfaceBorder)
+                            HorizontalDivider(thickness = 0.5.dp, color = SurfaceBorder)
                         }
                     }
                 }

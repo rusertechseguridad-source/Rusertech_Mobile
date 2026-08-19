@@ -44,7 +44,12 @@ class SplashViewModel @Inject constructor(
 
 @Composable
 fun SplashRoute(
-    onRegistered: () -> Unit, // actually navigates to tracking in the original NavGraph? Wait, in NavGraph we have onRegistered -> mode_selection. Let's rename to onNavigateToTracking, onNavigateToModeSelection, onNeedsRegistration
+    // Item 7 (tanda 7): se eliminó el parámetro `onRegistered`, que nunca se
+    // usó. Verificado ANTES de borrar (lección del bug del logout: parámetro
+    // sin uso = posible funcionalidad desconectada): acá NO había
+    // funcionalidad perdida — el ruteo del Splash cubre los tres destinos con
+    // los callbacks restantes, y el registro navega por SU propio
+    // `onRegistered` en RegistrationScreen, que sí está cableado.
     onNavigateToTracking: () -> Unit,
     onNavigateToModeSelection: () -> Unit,
     onNeedsRegistration: () -> Unit,

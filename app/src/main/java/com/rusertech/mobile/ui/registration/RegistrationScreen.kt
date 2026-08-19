@@ -63,7 +63,37 @@ fun RegistrationScreen(
             "Código de activación", "PIN provisto por el operador",
             error = viewModel.activationError, capitalization = KeyboardCapitalization.Characters)
 
-        Spacer(Modifier.height(28.dp))
+        // Item 6 (tanda 7): camino para el conductor SIN código — versión
+        // ligera, sin backend: abre WhatsApp al operador (o el marcador si
+        // WhatsApp no está). El número vive en el bloque MARCA de strings.xml
+        // (white-label); vacío = no se muestra nada.
+        val operatorPhone = stringResource(R.string.operator_contact_phone)
+        val context = androidx.compose.ui.platform.LocalContext.current
+        if (operatorPhone.isNotBlank()) {
+            Spacer(Modifier.height(10.dp))
+            Text(stringResource(R.string.register_no_code), fontSize = 12.sp, color = TextMuted)
+            androidx.compose.material3.TextButton(onClick = {
+                val whatsapp = android.content.Intent(
+                    android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse("https://wa.me/$operatorPhone")
+                )
+                runCatching { context.startActivity(whatsapp) }.onFailure {
+                    // Sin WhatsApp ni navegador: al marcador con el número cargado.
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(
+                                android.content.Intent.ACTION_DIAL,
+                                android.net.Uri.parse("tel:+$operatorPhone")
+                            )
+                        )
+                    }
+                }
+            }) {
+                Text(stringResource(R.string.register_request_code), fontSize = 13.sp, color = TechGlowCyan)
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
         if (viewModel.networkError != null) {
             Text(viewModel.networkError!!, color = SOSRed, fontSize = 13.sp, fontWeight = FontWeight.W500)
             Spacer(Modifier.height(16.dp))

@@ -224,6 +224,10 @@ fun TrackingScreen(
                     fontSize = 12.sp, color = TextSecondary
                 )
                 Spacer(Modifier.height(16.dp))
+                // Item 5 (tanda 7): filas COMPACTAS — ícono + título en una
+                // línea; la descripción solo en la opción seleccionada. El
+                // área táctil se mantiene ≥48 dp (guantes): el padding
+                // vertical de 14 dp + la línea de texto lo garantizan.
                 DriverState.entries.forEach { state ->
                     val selected = state == driverState
                     // B1: verde = circulando; azul = parada declarada (legítima).
@@ -238,24 +242,27 @@ fun TrackingScreen(
                                 viewModel.declareState(state)
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
                         shape = RoundedCornerShape(12.dp),
                         color = if (selected) accent.copy(alpha = 0.15f) else SurfaceCard,
                         border = BorderStroke(0.5.dp, if (selected) accent else SurfaceBorder)
                     ) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(driverStateIcon(state), fontSize = 22.sp)
-                            Spacer(Modifier.width(14.dp))
-                            Column {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(driverStateIcon(state), fontSize = 18.sp)
+                                Spacer(Modifier.width(12.dp))
                                 Text(
                                     state.displayName, fontSize = 15.sp,
                                     fontWeight = if (selected) FontWeight.W600 else FontWeight.W500,
                                     color = if (selected) accent else TextPrimary
                                 )
-                                Text(driverStateHint(state), fontSize = 12.sp, color = TextSecondary)
+                            }
+                            if (selected) {
+                                Text(
+                                    driverStateHint(state), fontSize = 12.sp,
+                                    color = TextSecondary,
+                                    modifier = Modifier.padding(start = 30.dp, top = 2.dp)
+                                )
                             }
                         }
                     }

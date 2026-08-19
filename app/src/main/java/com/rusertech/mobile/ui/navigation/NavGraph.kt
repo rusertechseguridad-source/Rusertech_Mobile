@@ -16,7 +16,6 @@ fun RusertechNavHost(navController: NavHostController = rememberNavController())
     NavHost(navController, startDestination = "splash") {
         composable("splash") {
             SplashRoute(
-                onRegistered = {}, // Unused
                 onNavigateToTracking = { navController.navigate("tracking") { popUpTo("splash") { inclusive = true } } },
                 onNavigateToModeSelection = { navController.navigate("mode_selection") { popUpTo("splash") { inclusive = true } } },
                 onNeedsRegistration = { navController.navigate("registration") { popUpTo("splash") { inclusive = true } } }

@@ -5,7 +5,12 @@
     <!-- Nombre con símbolo de marca registrada, para la pantalla de registro -->
     <string name="app_name_branded">Rusertech Mobile®</string>
     <string name="app_tagline">Seguridad &amp; Logística</string>
-    <!-- ==================================================================== -->
+    <!-- Item 6 (tanda 7): contacto del operador para pedir el código de
+         activación. SOLO dígitos con código de país (formato wa.me). White-label:
+         cada marca pone el suyo. Vacío = el botón no se muestra. -->
+    <string name="operator_contact_phone">5491166599334</string>    <!-- ==================================================================== -->
+    <string name="register_no_code">¿No tenés código? Pedilo a tu operador</string>
+    <string name="register_request_code">Solicitar por WhatsApp</string>
     <string name="register_title">Ingresá tus datos para comenzar</string>
     <string name="register_dni_label">Documento de identidad</string>
     <string name="register_dni_placeholder">DNI, RUT, CPF, cédula…</string>

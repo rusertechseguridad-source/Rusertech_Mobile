@@ -25,8 +25,17 @@ class MapViewModel @Inject constructor(
     private val prefs: UserPreferences
 ) : ViewModel() {
 
+    private companion object { const val TAG = "MapViewModel" }
+
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
+
+    // Item 3 (tanda 7): estado de error visible. El catch silencioso de acá
+    // ocultó el 403 de Nominatim durante semanas (M6) y después desvió el
+    // diagnóstico del bug de contraste. Un error que el conductor no ve y el
+    // log no registra no existe para nadie — hasta que sí.
+    private val _mapError = MutableStateFlow<String?>(null)
+    val mapError = _mapError.asStateFlow()
 
     private val _searchResults = MutableStateFlow<List<NominatimResponse>>(emptyList())
     val searchResults = _searchResults.asStateFlow()
@@ -110,11 +119,13 @@ class MapViewModel @Inject constructor(
     private fun searchNominatim(query: String) {
         viewModelScope.launch {
             _isLoading.value = true
+            _mapError.value = null
             try {
                 val results = mapApi.searchNominatim(query = query)
                 _searchResults.value = results
             } catch (e: Exception) {
-                // Ignore or log error
+                android.util.Log.e(TAG, "Búsqueda de dirección falló: \"$query\"", e)
+                _mapError.value = "No se pudo buscar la dirección"
             } finally {
                 _isLoading.value = false
             }
@@ -148,7 +159,8 @@ class MapViewModel @Inject constructor(
                     _routePoints.value = decodePolyline(encodedGeometry)
                 }
             } catch (e: Exception) {
-                // Ignore or log error
+                android.util.Log.e(TAG, "Cálculo de ruta falló", e)
+                _mapError.value = "No se pudo calcular la ruta"
             }
         }
     }

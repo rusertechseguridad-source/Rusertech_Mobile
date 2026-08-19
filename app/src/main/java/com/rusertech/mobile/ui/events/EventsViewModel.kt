@@ -76,6 +76,10 @@ class EventsViewModel @Inject constructor(
                 (context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator)
                     .vibrate(VibrationEffect.createOneShot(300, VibrationEffect.DEFAULT_AMPLITUDE))
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            // Vibración fallida no afecta al SOS (que ya se disparó) — pero
+            // se deja rastro (item 3: cero catch ciegos en el proyecto).
+            android.util.Log.w("EventsViewModel", "Vibración de SOS falló", e)
+        }
     }
 }
