@@ -17,6 +17,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         org.osmdroid.config.Configuration.getInstance().load(applicationContext, android.preference.PreferenceManager.getDefaultSharedPreferences(applicationContext))
+        // B2 (tanda 6): UA propio también para los TILES de OSM (misma
+        // política de uso que Nominatim — sin UA identificable pueden bloquear).
+        org.osmdroid.config.Configuration.getInstance().userAgentValue = "Rusertech-Mobile/1.0"
         enableEdgeToEdge()
         setContent { RusertechTheme { Surface(Modifier.fillMaxSize(), color = DeepSpaceTop) { RusertechNavHost() } } }
     }

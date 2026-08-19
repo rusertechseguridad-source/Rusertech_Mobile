@@ -30,4 +30,8 @@ interface LocationDao {
     /** FIX-7: purga total en logout — los puntos no llevan identidad propia. */
     @Query("DELETE FROM pending_locations")
     suspend fun deleteAll()
+
+    /** B3: rastro del recorrido para el mapa (sincronizados o no — viven 24 h). */
+    @Query("SELECT * FROM pending_locations WHERE timestamp >= :since ORDER BY timestamp ASC")
+    suspend fun getTrackSince(since: Long): List<LocationEntity>
 }

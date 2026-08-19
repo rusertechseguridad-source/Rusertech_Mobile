@@ -40,7 +40,7 @@
     <string name="permission_background_banner">Sin \"Permitir todo el tiempo\", el seguimiento no se reanuda solo tras reiniciar el teléfono. Tocá para configurarlo.</string>
     <string name="resume_notification_title">Seguimiento pendiente de reanudar</string>
     <string name="resume_notification_text">Tocá para reanudar el seguimiento del vehículo.</string>
-    <string name="events_sos_hold">Mantené presionado 1,5 segundos</string>
+    <string name="events_sos_hold">Mantené presionado 1 segundo</string>
     <string name="attachments_send">Enviar</string>
     <string name="attachments_discard">Descartar</string>
     <string name="attachments_saving">Guardando foto…</string>

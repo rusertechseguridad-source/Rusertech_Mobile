@@ -30,6 +30,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.graphics.toArgb
 import com.rusertech.mobile.ui.theme.*
 import com.rusertech.mobile.service.TrackingService
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -47,6 +48,10 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
     val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
     val destination by viewModel.destination.collectAsStateWithLifecycle()
     val routePoints by viewModel.routePoints.collectAsStateWithLifecycle()
+    // B3: rastro del recorrido + eventos sobre él
+    val showTrail by viewModel.showTrail.collectAsStateWithLifecycle()
+    val trailPoints by viewModel.trailPoints.collectAsStateWithLifecycle()
+    val trailEvents by viewModel.trailEvents.collectAsStateWithLifecycle()
 
     var hasLocationPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
@@ -95,26 +100,40 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                             val locationOverlay = MyLocationNewOverlay(this)
                             locationOverlay.enableMyLocation()
                             locationOverlay.enableFollowLocation()
-                            
-                            // Custom TechGlowCyan icons
-                            val cyan = android.graphics.Color.parseColor("#00E5FF")
-                            
-                            val personBmp = android.graphics.Bitmap.createBitmap(40, 40, android.graphics.Bitmap.Config.ARGB_8888)
+
+                            // B2: marcador de posición con el gradiente Tech
+                            // Glow de la marca (verde→menta→azul) + pin, en
+                            // vez del cyan hardcodeado fuera de paleta.
+                            val glowShader = android.graphics.LinearGradient(
+                                4f, 4f, 44f, 44f,
+                                intArrayOf(TechGlowGreen.toArgb(), TechGlowCyan.toArgb(), TechGlowBlue.toArgb()),
+                                null, android.graphics.Shader.TileMode.CLAMP
+                            )
+                            val personBmp = android.graphics.Bitmap.createBitmap(48, 48, android.graphics.Bitmap.Config.ARGB_8888)
                             android.graphics.Canvas(personBmp).apply {
-                                drawCircle(20f, 20f, 15f, android.graphics.Paint().apply { color = cyan; isAntiAlias = true; style = android.graphics.Paint.Style.FILL })
-                                drawCircle(20f, 20f, 15f, android.graphics.Paint().apply { color = android.graphics.Color.BLACK; isAntiAlias = true; style = android.graphics.Paint.Style.STROKE; strokeWidth = 2f })
+                                drawCircle(24f, 24f, 20f, android.graphics.Paint().apply { shader = glowShader; isAntiAlias = true; style = android.graphics.Paint.Style.FILL })
+                                drawCircle(24f, 24f, 20f, android.graphics.Paint().apply { color = DeepSpaceTop.toArgb(); isAntiAlias = true; style = android.graphics.Paint.Style.STROKE; strokeWidth = 3f })
+                                // Pin interior: cabeza + punta, en Deep Space para contraste
+                                drawCircle(24f, 19f, 6f, android.graphics.Paint().apply { color = DeepSpaceTop.toArgb(); isAntiAlias = true; style = android.graphics.Paint.Style.FILL })
+                                val pinPath = android.graphics.Path().apply { moveTo(18f, 22f); lineTo(30f, 22f); lineTo(24f, 35f); close() }
+                                drawPath(pinPath, android.graphics.Paint().apply { color = DeepSpaceTop.toArgb(); isAntiAlias = true; style = android.graphics.Paint.Style.FILL })
                             }
-                            
+
                             val arrowBmp = android.graphics.Bitmap.createBitmap(60, 60, android.graphics.Bitmap.Config.ARGB_8888)
                             android.graphics.Canvas(arrowBmp).apply {
                                 val path = android.graphics.Path().apply { moveTo(30f, 0f); lineTo(60f, 60f); lineTo(30f, 45f); lineTo(0f, 60f); close() }
-                                drawPath(path, android.graphics.Paint().apply { color = cyan; isAntiAlias = true; style = android.graphics.Paint.Style.FILL })
-                                drawPath(path, android.graphics.Paint().apply { color = android.graphics.Color.BLACK; isAntiAlias = true; style = android.graphics.Paint.Style.STROKE; strokeWidth = 2f })
+                                drawPath(path, android.graphics.Paint().apply {
+                                    shader = android.graphics.LinearGradient(0f, 0f, 60f, 60f,
+                                        intArrayOf(TechGlowGreen.toArgb(), TechGlowCyan.toArgb(), TechGlowBlue.toArgb()),
+                                        null, android.graphics.Shader.TileMode.CLAMP)
+                                    isAntiAlias = true; style = android.graphics.Paint.Style.FILL
+                                })
+                                drawPath(path, android.graphics.Paint().apply { color = DeepSpaceTop.toArgb(); isAntiAlias = true; style = android.graphics.Paint.Style.STROKE; strokeWidth = 3f })
                             }
-                            
+
                             locationOverlay.setPersonIcon(personBmp)
                             locationOverlay.setDirectionArrow(personBmp, arrowBmp)
-                            
+
                             overlays.add(locationOverlay)
                         }
                     },
@@ -123,6 +142,30 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                         val myLoc = map.overlays.filterIsInstance<MyLocationNewOverlay>().firstOrNull()
                         map.overlays.clear()
                         if (myLoc != null) map.overlays.add(myLoc)
+
+                        // B3: rastro del recorrido desde Room + marcadores de
+                        // estado/evento con la semántica de color de B1.
+                        if (showTrail && trailPoints.size > 1) {
+                            val trail = Polyline(map)
+                            trail.setPoints(trailPoints)
+                            trail.outlinePaint.color = TechGlowCyan.toArgb()
+                            trail.outlinePaint.strokeWidth = 8f
+                            map.overlays.add(trail)
+                        }
+                        if (showTrail) {
+                            trailEvents.forEach { ev ->
+                                val m = Marker(map)
+                                m.position = GeoPoint(ev.latitude, ev.longitude)
+                                m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                m.icon = android.graphics.drawable.BitmapDrawable(
+                                    map.context.resources,
+                                    eventDotBitmap(eventColor(ev.type).toArgb())
+                                )
+                                m.title = com.rusertech.mobile.domain.model.EventType
+                                    .fromCode(ev.type)?.displayName ?: ev.type
+                                map.overlays.add(m)
+                            }
+                        }
 
                         destination?.let { dest ->
                             val marker = Marker(map)
@@ -135,7 +178,9 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                         if (routePoints.isNotEmpty()) {
                             val polyline = Polyline(map)
                             polyline.setPoints(routePoints)
-                            polyline.color = android.graphics.Color.parseColor("#00E5FF") // TechGlowCyan
+                            // B2: ruta sugerida en azul de paleta — distinta del
+                            // rastro real (verde-menta) para no confundirlos.
+                            polyline.color = TechGlowBlue.toArgb()
                             polyline.width = 10f
                             map.overlays.add(polyline)
 
@@ -151,10 +196,17 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                     }
                 )
 
-                // FAB "Ubicarme"
+                // FAB "Ubicarme" — B2: antes dependía SOLO de la posición que
+                // llega por TrackingService (null con el tracking detenido →
+                // el botón "no funcionaba"). Fallback al fix propio del
+                // overlay de osmdroid, que vive aunque el servicio no corra.
                 FloatingActionButton(
                     onClick = {
-                        currentLocation?.let { mapInstance?.controller?.animateTo(it, 16.0, 1000L) }
+                        val overlayFix = mapInstance?.overlays
+                            ?.filterIsInstance<MyLocationNewOverlay>()
+                            ?.firstOrNull()?.myLocation
+                        val target = currentLocation ?: overlayFix
+                        target?.let { mapInstance?.controller?.animateTo(it, 16.0, 1000L) }
                     },
                     modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).padding(bottom = 32.dp),
                     containerColor = TechGlowCyan
@@ -200,6 +252,34 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                 )
             }
 
+            // B3: switch para mostrar/ocultar el rastro del recorrido.
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = DeepSpaceTop.copy(alpha = 0.8f)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Rastro", fontSize = 12.sp, color = TextSecondary)
+                        Spacer(Modifier.width(8.dp))
+                        Switch(
+                            checked = showTrail,
+                            onCheckedChange = { viewModel.toggleTrail() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = TechGlowCyan,
+                                checkedTrackColor = TechGlowCyan.copy(alpha = 0.4f)
+                            )
+                        )
+                    }
+                }
+            }
+
             AnimatedVisibility(visible = searchResults.isNotEmpty() && destination == null) {
                 Card(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(max = 250.dp),
@@ -225,4 +305,19 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
             }
         }
     }
+}
+
+/** B3: punto coloreado para marcar eventos/estados sobre el rastro. */
+private fun eventDotBitmap(colorInt: Int): android.graphics.Bitmap {
+    val bmp = android.graphics.Bitmap.createBitmap(28, 28, android.graphics.Bitmap.Config.ARGB_8888)
+    android.graphics.Canvas(bmp).apply {
+        drawCircle(14f, 14f, 11f, android.graphics.Paint().apply {
+            color = colorInt; isAntiAlias = true; style = android.graphics.Paint.Style.FILL
+        })
+        drawCircle(14f, 14f, 11f, android.graphics.Paint().apply {
+            color = android.graphics.Color.WHITE; isAntiAlias = true
+            style = android.graphics.Paint.Style.STROKE; strokeWidth = 3f
+        })
+    }
+    return bmp
 }

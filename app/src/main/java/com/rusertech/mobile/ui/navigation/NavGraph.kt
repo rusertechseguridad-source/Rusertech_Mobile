@@ -35,7 +35,12 @@ fun RusertechNavHost(navController: NavHostController = rememberNavController())
         }
         composable("create_trip") {
             com.rusertech.mobile.ui.mode.CreateTripScreen(
-                onTripCreated = { navController.navigate("tracking") { popUpTo("mode_selection") { inclusive = true } } },
+                // B7: a create_trip se llega desde la selección de modo Y
+                // desde Tracking Libre. popUpTo(0) limpia el back stack en
+                // ambos caminos: queda [tracking] solo, sin pantallas viejas
+                // debajo (un popUpTo por ruta fallaría en el camino que no
+                // la tiene en el stack).
+                onTripCreated = { navController.navigate("tracking") { popUpTo(0) { inclusive = true } } },
                 onBack = { navController.popBackStack() }
             )
         }
@@ -47,7 +52,8 @@ fun RusertechNavHost(navController: NavHostController = rememberNavController())
                 onTripFinished = { navController.navigate("mode_selection") { popUpTo("tracking") { inclusive = true } } },
                 onNavigateToEvents = { navController.navigate("events") },
                 onNavigateToAttachments = { navController.navigate("attachments") },
-                onNavigateToMap = { navController.navigate("map") }
+                onNavigateToMap = { navController.navigate("map") },
+                onNavigateToCreateTrip = { navController.navigate("create_trip") }
             )
         }
         composable("events") { EventsScreen(onBack = { navController.popBackStack() }) }

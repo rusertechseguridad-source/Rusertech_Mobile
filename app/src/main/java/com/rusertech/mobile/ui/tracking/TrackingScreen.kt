@@ -44,6 +44,7 @@ fun TrackingScreen(
     onNavigateToEvents: () -> Unit,
     onNavigateToAttachments: () -> Unit,  // Sección 29
     onNavigateToMap: () -> Unit,
+    onNavigateToCreateTrip: () -> Unit,  // B7: cambiar de modo sin desloguear
     viewModel: TrackingViewModel = hiltViewModel()
 ) {
     val identity by viewModel.userIdentity.collectAsStateWithLifecycle()
@@ -59,6 +60,14 @@ fun TrackingScreen(
 
     val activeTrip by viewModel.activeTrip.collectAsStateWithLifecycle()
     var showEndTripDialog by remember { mutableStateOf(false) }
+    // B7: cerrar sesión con confirmación de texto (el ícono solo no se lee
+    // como "salir") — y llamando de verdad a viewModel.logout(): el ícono
+    // anterior SOLO navegaba, la purga de FIX-7 nunca corría desde la UI.
+    var showLogoutDialog by remember { mutableStateOf(false) }
+    // B6: al declarar parada sanitaria se pide el lugar (metadata).
+    var showSanitaryOptions by remember { mutableStateOf(false) }
+    // B4: distancia acumulada de la sesión.
+    val sessionDistanceM by viewModel.sessionDistanceM.collectAsStateWithLifecycle()
 
     // FIX-10: estado operativo del conductor + bottom sheet para declararlo.
     val driverState by viewModel.driverState.collectAsStateWithLifecycle()
@@ -217,15 +226,22 @@ fun TrackingScreen(
                 Spacer(Modifier.height(16.dp))
                 DriverState.entries.forEach { state ->
                     val selected = state == driverState
+                    // B1: verde = circulando; azul = parada declarada (legítima).
+                    val accent = driverStateColor(state)
                     Surface(
                         onClick = {
                             showStateSheet = false
-                            viewModel.declareState(state)
+                            // B6: la parada sanitaria pide el lugar antes de declararse.
+                            if (state == DriverState.STOPPED_SANITARY) {
+                                showSanitaryOptions = true
+                            } else {
+                                viewModel.declareState(state)
+                            }
                         },
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                         shape = RoundedCornerShape(12.dp),
-                        color = if (selected) TechGlowCyan.copy(alpha = 0.15f) else SurfaceCard,
-                        border = BorderStroke(0.5.dp, if (selected) TechGlowCyan else SurfaceBorder)
+                        color = if (selected) accent.copy(alpha = 0.15f) else SurfaceCard,
+                        border = BorderStroke(0.5.dp, if (selected) accent else SurfaceBorder)
                     ) {
                         Row(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
@@ -237,7 +253,7 @@ fun TrackingScreen(
                                 Text(
                                     state.displayName, fontSize = 15.sp,
                                     fontWeight = if (selected) FontWeight.W600 else FontWeight.W500,
-                                    color = if (selected) TechGlowCyan else TextPrimary
+                                    color = if (selected) accent else TextPrimary
                                 )
                                 Text(driverStateHint(state), fontSize = 12.sp, color = TextSecondary)
                             }
@@ -246,6 +262,70 @@ fun TrackingScreen(
                 }
             }
         }
+    }
+
+    // B6: lugar de la parada sanitaria — viaja en metadata, sin código nuevo.
+    if (showSanitaryOptions) {
+        AlertDialog(
+            onDismissRequest = { showSanitaryOptions = false },
+            title = { Text("¿Dónde es la parada?", color = TextPrimary, fontSize = 17.sp) },
+            text = {
+                Column {
+                    listOf(
+                        "baño público" to "Baño público",
+                        "estación de servicio" to "Estación de servicio",
+                        "otro" to "Otro"
+                    ).forEach { (value, label) ->
+                        TextButton(
+                            onClick = {
+                                showSanitaryOptions = false
+                                viewModel.declareState(
+                                    DriverState.STOPPED_SANITARY,
+                                    metadata = mapOf("lugar" to value)
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(label, color = TextPrimary, fontSize = 15.sp) }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showSanitaryOptions = false }) {
+                    Text("Cancelar", color = TextMuted)
+                }
+            },
+            containerColor = DeepSpaceTop
+        )
+    }
+
+    // B7: confirmación de cierre de sesión CON texto — y ejecutando el logout
+    // real (purga FIX-7) antes de navegar.
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("Cerrar sesión", color = TextPrimary) },
+            text = {
+                Text(
+                    "Se cerrará la sesión de este dispositivo. Lo pendiente sin " +
+                        "sincronizar se intenta enviar y después se borra del teléfono.",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showLogoutDialog = false
+                    viewModel.logout()
+                    onLogout()
+                }) { Text("Cerrar sesión", color = SOSRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutDialog = false }) {
+                    Text("Cancelar", color = TextPrimary)
+                }
+            },
+            containerColor = DeepSpaceTop
+        )
     }
 
     if (showEndTripDialog) {
@@ -318,8 +398,10 @@ fun TrackingScreen(
                     if (isTracking) SuccessGreen else TextMuted)
                 Spacer(Modifier.width(8.dp))
                 // Solo permitimos logout si no hay viaje activo. Si hay viaje activo, obligamos a cerrarlo.
+                // B7: abre la confirmación con texto (antes navegaba directo
+                // SIN ejecutar el logout real — la purga nunca corría).
                 if (activeTrip == null) {
-                    IconButton(onClick = onLogout) { Icon(Icons.AutoMirrored.Filled.ExitToApp, "Salir", tint = TextSecondary) }
+                    IconButton(onClick = { showLogoutDialog = true }) { Icon(Icons.AutoMirrored.Filled.ExitToApp, "Cerrar sesión", tint = TextSecondary) }
                 }
             }
         }
@@ -345,12 +427,15 @@ fun TrackingScreen(
         // FIX-10: estado operativo — siempre visible; tap abre el selector.
         // Disponible con tracking activo, en Modo Viaje y en Tracking Libre.
         if (isTracking) {
+            // B1: parada DECLARADA = azul (legítima); el ámbar queda reservado
+            // para la señal de seguridad (MOB_STOP, parada NO declarada).
+            val stateAccent = driverStateColor(driverState)
             Surface(
                 onClick = { showStateSheet = true },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                color = if (driverState.isDeclaredStop) WarningAmber.copy(alpha = 0.12f) else SurfaceCard,
-                border = BorderStroke(0.5.dp, if (driverState.isDeclaredStop) WarningAmber else SurfaceBorder)
+                color = if (driverState.isDeclaredStop) stateAccent.copy(alpha = 0.12f) else SurfaceCard,
+                border = BorderStroke(0.5.dp, if (driverState.isDeclaredStop) stateAccent else SurfaceBorder)
             ) {
                 Column {
                     Row(
@@ -365,7 +450,7 @@ fun TrackingScreen(
                                 Text("Estado", fontSize = 11.sp, color = TextMuted)
                                 Text(
                                     driverState.displayName, fontSize = 14.sp, fontWeight = FontWeight.W600,
-                                    color = if (driverState.isDeclaredStop) WarningAmber else TextPrimary
+                                    color = if (driverState.isDeclaredStop) stateAccent else TextPrimary
                                 )
                             }
                         }
@@ -412,6 +497,17 @@ fun TrackingScreen(
                 StatusRow("Red", isOnline, "Conectado", "Sin conexión")
                 StatusRow("Tracking", isTracking, "Activo", "Detenido")
                 StatusRow("Batería", battery > 20, "$battery%", "$battery% (baja)")
+                // B4: distancia recorrida desde que arrancó el seguimiento.
+                if (isTracking || sessionDistanceM > 0f) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), Arrangement.SpaceBetween) {
+                        Text("Distancia", fontSize = 13.sp, color = TextSecondary)
+                        Text(
+                            if (sessionDistanceM >= 1000f) "%.1f km".format(sessionDistanceM / 1000f)
+                            else "${sessionDistanceM.toInt()} m",
+                            fontSize = 13.sp, color = TextPrimary
+                        )
+                    }
+                }
                 if (pendingCount > 0) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), Arrangement.SpaceBetween) {
                         Text("Pendientes", fontSize = 13.sp, color = TextSecondary)
@@ -443,11 +539,23 @@ fun TrackingScreen(
             }
         }
         Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = onNavigateToAttachments, modifier = Modifier.fillMaxWidth().height(48.dp),
-            shape = RoundedCornerShape(12.dp), border = BorderStroke(0.5.dp, SurfaceBorder),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary)) {
-            Icon(Icons.Default.PhotoCamera, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-            Text("Fotos de carga", fontSize = 14.sp)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = onNavigateToAttachments, modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(12.dp), border = BorderStroke(0.5.dp, SurfaceBorder),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary)) {
+                Icon(Icons.Default.PhotoCamera, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                Text("Fotos de carga", fontSize = 13.sp)
+            }
+            // B7: cambiar de modo sin desloguear — desde Tracking Libre se
+            // puede generar un viaje directamente (el camino inverso es
+            // Finalizar Viaje, que ya vuelve a la selección de modo).
+            if (activeTrip == null) {
+                OutlinedButton(onClick = onNavigateToCreateTrip, modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(12.dp), border = BorderStroke(0.5.dp, TechGlowCyan.copy(alpha = 0.6f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TechGlowCyan)) {
+                    Text("Generar Viaje", fontSize = 13.sp, fontWeight = FontWeight.W600)
+                }
+            }
         }
         Spacer(Modifier.height(10.dp))
         

@@ -83,11 +83,14 @@ class CreateTripViewModel @Inject constructor(
 
             // FIX-2: crear viaje REQUIERE red. Solo un tripId real del servidor
             // persiste ActiveTrip; si falla, no queda ningún estado fantasma.
+            // B7 (tanda 6): origen, destino y tipo de carga normalizados a
+            // MAYÚSCULAS al enviar — consistencia en el dashboard sin forzar
+            // el teclado del conductor.
             val result = tripRepository.createTrip(
                 identity = identity,
-                originAddress = origin,
-                destinationAddress = destination,
-                cargoType = cargoType,
+                originAddress = origin.trim().uppercase(),
+                destinationAddress = destination.trim().uppercase(),
+                cargoType = cargoType.trim().uppercase(),
                 notes = notes,
                 plannedHours = plannedHours
             )

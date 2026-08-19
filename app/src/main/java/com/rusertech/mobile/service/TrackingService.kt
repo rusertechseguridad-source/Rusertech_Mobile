@@ -86,6 +86,12 @@ class TrackingService : Service() {
         // Sección 10.1: true cuando el backend respondió 401 (API Key mal formada, NO detiene tracking)
         private val _credentialWarning = MutableStateFlow(false)
         val credentialWarning: StateFlow<Boolean> = _credentialWarning.asStateFlow()
+        // B4 (tanda 6): distancia acumulada de la sesión, en metros — suma de
+        // distancias entre puntos consecutivos PERSISTIDOS (los mismos que
+        // van a Room). Se reinicia al iniciar el tracking; el cálculo
+        // definitivo por viaje vive en el backend, esto es informativo.
+        private val _sessionDistanceM = MutableStateFlow(0f)
+        val sessionDistanceM: StateFlow<Float> = _sessionDistanceM.asStateFlow()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -120,6 +126,7 @@ class TrackingService : Service() {
             // reutilizarse entre start/stop).
             vehicleStoppedSince = 0L; stopEventSent = false; movingSince = 0L
             stopAnchor = null; lastSaved = null; lastSavedAt = 0L
+            _sessionDistanceM.value = 0f  // B4: distancia por sesión
             locationManager.startUpdates()
 
             locationManager.locations.collect { location ->
@@ -141,6 +148,10 @@ class TrackingService : Service() {
                     location.speed >= LocationManager.SPEED_THRESHOLD_MS ||
                     now - lastSavedAt >= LocationManager.INTERVAL_IDLE_MS
                 if (shouldSave) {
+                    // B4: acumular distancia entre puntos persistidos consecutivos.
+                    lastSaved?.let { prev ->
+                        if (moved) _sessionDistanceM.value += prev.distanceTo(location)
+                    }
                     val point = LocationPoint(
                         latitude = location.latitude, longitude = location.longitude,
                         accuracy = location.accuracy, speed = location.speed,

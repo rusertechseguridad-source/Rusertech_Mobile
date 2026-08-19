@@ -41,4 +41,8 @@ interface EventDao {
     /** FIX-7: purga total en logout — los eventos no llevan identidad propia. */
     @Query("DELETE FROM tracking_events")
     suspend fun deleteAll()
+
+    /** B3: eventos con posición real para marcar sobre el rastro del mapa. */
+    @Query("SELECT * FROM tracking_events WHERE timestamp >= :since AND awaitingFix = 0 ORDER BY timestamp ASC")
+    suspend fun getEventsSince(since: Long): List<EventEntity>
 }

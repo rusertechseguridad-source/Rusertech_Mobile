@@ -3,6 +3,10 @@ package com.rusertech.mobile.ui.map
 import android.location.Location
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rusertech.mobile.data.local.db.EventDao
+import com.rusertech.mobile.data.local.db.EventEntity
+import com.rusertech.mobile.data.local.db.LocationDao
+import com.rusertech.mobile.data.local.prefs.UserPreferences
 import com.rusertech.mobile.data.remote.api.MapApi
 import com.rusertech.mobile.data.remote.api.NominatimResponse
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -15,7 +19,10 @@ import javax.inject.Inject
 @OptIn(FlowPreview::class)
 @HiltViewModel
 class MapViewModel @Inject constructor(
-    private val mapApi: MapApi
+    private val mapApi: MapApi,
+    private val locationDao: LocationDao,
+    private val eventDao: EventDao,
+    private val prefs: UserPreferences
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -36,7 +43,39 @@ class MapViewModel @Inject constructor(
     private val _routePoints = MutableStateFlow<List<GeoPoint>>(emptyList())
     val routePoints = _routePoints.asStateFlow()
 
+    // ------------------------------------------------------------------
+    // B3: rastro del recorrido desde Room (sin backend) + eventos sobre él.
+    // ------------------------------------------------------------------
+    private val _showTrail = MutableStateFlow(true)
+    val showTrail = _showTrail.asStateFlow()
 
+    private val _trailPoints = MutableStateFlow<List<GeoPoint>>(emptyList())
+    val trailPoints = _trailPoints.asStateFlow()
+
+    private val _trailEvents = MutableStateFlow<List<EventEntity>>(emptyList())
+    val trailEvents = _trailEvents.asStateFlow()
+
+    fun toggleTrail() {
+        _showTrail.value = !_showTrail.value
+        if (_showTrail.value) loadTrail()
+    }
+
+    /**
+     * Carga el rastro: desde el inicio del viaje activo si lo hay, o las
+     * últimas 12 h de puntos (Room los retiene 24 h tras sincronizar).
+     */
+    fun loadTrail() {
+        viewModelScope.launch {
+            val trip = prefs.activeTrip.first()
+            val since = trip?.startedAt ?: (System.currentTimeMillis() - 12 * 3_600_000L)
+            _trailPoints.value = locationDao.getTrackSince(since).map { GeoPoint(it.latitude, it.longitude) }
+            _trailEvents.value = eventDao.getEventsSince(since)
+        }
+    }
+
+    init {
+        loadTrail()
+    }
 
     init {
         viewModelScope.launch {
@@ -55,7 +94,14 @@ class MapViewModel @Inject constructor(
     }
 
     fun updateCurrentLocation(loc: Location) {
-        _currentLocation.value = GeoPoint(loc.latitude, loc.longitude)
+        val point = GeoPoint(loc.latitude, loc.longitude)
+        _currentLocation.value = point
+        // B3: el rastro crece en vivo mientras la pantalla está abierta
+        // (los puntos nuevos aún no están consultados de Room).
+        val last = _trailPoints.value.lastOrNull()
+        if (last == null || last.distanceToAsDouble(point) >= 10.0) {
+            _trailPoints.value = _trailPoints.value + point
+        }
         if (_destination.value != null && _routePoints.value.isEmpty()) {
             calculateRoute()
         }

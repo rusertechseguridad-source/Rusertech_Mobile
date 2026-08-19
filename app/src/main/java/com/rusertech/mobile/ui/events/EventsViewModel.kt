@@ -40,13 +40,16 @@ class EventsViewModel @Inject constructor(
     val pendingCount: StateFlow<Int> = eventRepository.getUnsyncedCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    fun fireEvent(type: EventType) {
+    fun fireEvent(type: EventType, metadata: Map<String, String> = emptyMap()) {
         viewModelScope.launch {
             val identity = userRepository.userIdentity.firstOrNull() ?: return@launch
             // Sin fix de GPS se pasa null — NUNCA 0,0. EventRepository resuelve:
             // última posición conocida (staleLocation) o encolar hasta el primer fix.
+            // B6: el detalle (categoría de incidente, tipo de checkpoint) va en
+            // metadata — el diccionario MOB_ no crece.
             val location = TrackingService.lastLocation.value
-            eventRepository.createEvent(type, identity, location?.latitude, location?.longitude)
+            eventRepository.createEvent(type, identity, location?.latitude, location?.longitude,
+                metadata = metadata)
             _feedback.value = type.displayName; delay(3000); _feedback.value = null
         }
     }

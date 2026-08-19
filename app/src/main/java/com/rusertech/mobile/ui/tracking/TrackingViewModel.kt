@@ -76,7 +76,7 @@ class TrackingViewModel @Inject constructor(
      * correspondiente con la posición actual y el tripId si hay viaje.
      * Disponible también en Tracking Libre (los eventos van sin tripId).
      */
-    fun declareState(newState: DriverState) {
+    fun declareState(newState: DriverState, metadata: Map<String, String> = emptyMap()) {
         viewModelScope.launch {
             val current = driverState.value
             if (newState == current) return@launch
@@ -86,16 +86,22 @@ class TrackingViewModel @Inject constructor(
 
             // Sin fix de GPS se pasa null: EventRepository usa la última
             // posición conocida (staleLocation) o encola hasta el primer fix.
+            // B6: el detalle (p. ej. lugar de la parada sanitaria) viaja en
+            // metadata — el diccionario de códigos MOB_ no crece.
             val location = lastLocation.value
             eventRepository.createEvent(
                 type = newState.transitionEvent,
                 identity = identity,
                 latitude = location?.latitude,
                 longitude = location?.longitude,
+                metadata = metadata,
                 tripId = activeTrip.value?.tripId
             )
         }
     }
+
+    // B4: distancia acumulada de la sesión (metros), desde el servicio.
+    val sessionDistanceM = TrackingService.sessionDistanceM
 
     fun completeTrip(onSuccess: () -> Unit) {
         viewModelScope.launch {

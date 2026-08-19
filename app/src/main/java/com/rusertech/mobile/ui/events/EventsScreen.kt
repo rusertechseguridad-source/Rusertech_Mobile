@@ -40,6 +40,46 @@ fun EventsScreen(onBack: () -> Unit, viewModel: EventsViewModel = hiltViewModel(
     val recentEvents by viewModel.recentEvents.collectAsStateWithLifecycle()
     val feedback by viewModel.feedback.collectAsStateWithLifecycle()
     val pendingCount by viewModel.pendingCount.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // B6: evento pendiente de detalle (incidente/checkpoint) antes de disparar.
+    var pendingMetaEvent by remember { mutableStateOf<EventType?>(null) }
+
+    // B6: el detalle viaja en metadata — un diálogo liviano por tipo.
+    pendingMetaEvent?.let { evType ->
+        val options = when (evType) {
+            EventType.INCIDENT -> listOf(
+                "propio" to "Incidente propio", "tercero" to "Incidente de un tercero"
+            )
+            EventType.CHECKPOINT -> listOf(
+                "control policial" to "Control policial", "peaje" to "Peaje",
+                "báscula" to "Báscula", "otro" to "Otro"
+            )
+            else -> emptyList()
+        }
+        val metaKey = if (evType == EventType.INCIDENT) "categoria" else "tipo"
+        AlertDialog(
+            onDismissRequest = { pendingMetaEvent = null },
+            title = { Text(evType.displayName, color = TextPrimary, fontSize = 17.sp) },
+            text = {
+                Column {
+                    options.forEach { (value, label) ->
+                        TextButton(
+                            onClick = {
+                                pendingMetaEvent = null
+                                viewModel.fireEvent(evType, metadata = mapOf(metaKey to value))
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(label, color = TextPrimary, fontSize = 15.sp) }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { pendingMetaEvent = null }) { Text("Cancelar", color = TextMuted) }
+            },
+            containerColor = DeepSpaceTop
+        )
+    }
 
     Column(Modifier.fillMaxSize().background(deepSpaceGradient()).padding(20.dp).systemBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -62,8 +102,8 @@ fun EventsScreen(onBack: () -> Unit, viewModel: EventsViewModel = hiltViewModel(
         var sosProgress by remember { mutableStateOf(0f) }
         LaunchedEffect(sosPressing) {
             if (sosPressing) {
-                val steps = 30
-                repeat(steps) {                       // 30 × 50 ms = 1,5 s
+                val steps = 20
+                repeat(steps) {                       // B7: 20 × 50 ms = 1 s
                     kotlinx.coroutines.delay(50)
                     sosProgress = (it + 1) / steps.toFloat()
                 }
@@ -74,37 +114,63 @@ fun EventsScreen(onBack: () -> Unit, viewModel: EventsViewModel = hiltViewModel(
                 sosProgress = 0f                      // soltó antes: se cancela
             }
         }
-        Box(
-            Modifier.fillMaxWidth().height(60.dp).clip(RoundedCornerShape(14.dp))
-                .background(SOSRed.copy(alpha = 0.55f))
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onPress = {
-                            sosPressing = true
-                            tryAwaitRelease()
-                            sosPressing = false
-                        }
-                    )
-                }
-        ) {
-            // Relleno progresivo: el conductor VE que está pasando algo.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(
-                Modifier.fillMaxWidth(sosProgress).fillMaxHeight()
-                    .background(SOSRed)
-            )
-            Column(
-                Modifier.align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally
+                Modifier.weight(1f).height(60.dp).clip(RoundedCornerShape(14.dp))
+                    .background(SOSRed.copy(alpha = 0.55f))
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onPress = {
+                                sosPressing = true
+                                tryAwaitRelease()
+                                sosPressing = false
+                            }
+                        )
+                    }
             ) {
-                Text(
-                    feedback?.takeIf { it.contains("SOS") } ?: stringResource(R.string.events_sos),
-                    fontSize = 17.sp, fontWeight = FontWeight.W500, color = Color.White
+                // Relleno progresivo: el conductor VE que está pasando algo.
+                Box(
+                    Modifier.fillMaxWidth(sosProgress).fillMaxHeight()
+                        .background(SOSRed)
                 )
-                if (feedback?.contains("SOS") != true) {
+                Column(
+                    Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     Text(
-                        stringResource(R.string.events_sos_hold),
-                        fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f)
+                        feedback?.takeIf { it.contains("SOS") } ?: stringResource(R.string.events_sos),
+                        fontSize = 16.sp, fontWeight = FontWeight.W500, color = Color.White
                     )
+                    if (feedback?.contains("SOS") != true) {
+                        Text(
+                            stringResource(R.string.events_sos_hold),
+                            fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+            // B5: emergencia telefónica — abre el MARCADOR con 911 cargado.
+            // ACTION_DIAL muestra el número sin llamar solo: cero permisos,
+            // cero problemas con Play (ACTION_CALL exige permiso auditado).
+            OutlinedButton(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(
+                                android.content.Intent.ACTION_DIAL,
+                                android.net.Uri.parse("tel:911")
+                            )
+                        )
+                    }
+                },
+                modifier = Modifier.height(60.dp),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, SOSRed),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = SOSRed)
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.Phone, contentDescription = "Llamar al 911", Modifier.size(18.dp))
+                    Text("911", fontSize = 12.sp, fontWeight = FontWeight.W600)
                 }
             }
         }
@@ -113,9 +179,9 @@ fun EventsScreen(onBack: () -> Unit, viewModel: EventsViewModel = hiltViewModel(
             QuickAction(Icons.Default.Phone, stringResource(R.string.events_communication), InfoBlue, Modifier.weight(1f)) {
                 viewModel.fireEvent(EventType.COMMUNICATION_REQUEST) }
             QuickAction(Icons.Default.LocationOn, stringResource(R.string.events_checkpoint), SuccessGreen, Modifier.weight(1f)) {
-                viewModel.fireEvent(EventType.CHECKPOINT) }
+                pendingMetaEvent = EventType.CHECKPOINT }  // B6: pide el tipo
             QuickAction(Icons.Default.Warning, stringResource(R.string.events_incident), WarningAmber, Modifier.weight(1f)) {
-                viewModel.fireEvent(EventType.INCIDENT) }
+                pendingMetaEvent = EventType.INCIDENT }    // B6: propio/tercero
         }
         // Feedback
         AnimatedVisibility(feedback != null && !feedback!!.contains("SOS"), enter = fadeIn() + slideInVertically(), exit = fadeOut()) {
@@ -157,18 +223,22 @@ fun EventsScreen(onBack: () -> Unit, viewModel: EventsViewModel = hiltViewModel(
 }
 
 @Composable private fun EventRow(event: EventEntity) {
-    val dotColor = when (event.type) {
-        "MOB_SOS" -> SOSRed; "MOB_COMM" -> InfoBlue; "MOB_CHKPT" -> SuccessGreen
-        "MOB_INCIDENT" -> WarningAmber; "MOB_LOWBAT" -> WarningAmber; "MOB_STOP" -> TextMuted
-        else -> TextSecondary
-    }
+    // B1: color centralizado en el theme — MOB_STOP en ámbar (señal de
+    // seguridad), paradas declaradas en azul, reanudación en verde.
+    val dotColor = eventColor(event.type)
     val timeStr = remember(event.timestamp) { SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault()).format(Date(event.timestamp)) }
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(Modifier.size(8.dp).background(dotColor, CircleShape))
         Column(Modifier.weight(1f)) {
             Text(EventType.fromCode(event.type)?.displayName ?: event.type, fontSize = 14.sp, fontWeight = FontWeight.W600, color = TextPrimary)
             Spacer(Modifier.height(4.dp))
-            Text("$timeStr · ${"%.4f".format(event.latitude)}, ${"%.4f".format(event.longitude)}", fontSize = 12.sp, color = TextSecondary)
+            // B7: un evento encolado sin fix no tiene coordenadas reales aún —
+            // mostrar la verdad en vez de "0.0000, 0.0000".
+            Text(
+                if (event.awaitingFix) "$timeStr · Esperando ubicación"
+                else "$timeStr · ${"%.4f".format(event.latitude)}, ${"%.4f".format(event.longitude)}",
+                fontSize = 12.sp, color = TextSecondary
+            )
         }
         if (!event.isSynced) Box(Modifier.size(6.dp).background(WarningAmber, CircleShape))
     }
