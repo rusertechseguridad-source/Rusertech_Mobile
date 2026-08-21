@@ -1,5 +1,6 @@
 package com.rusertech.mobile.service
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,7 +8,9 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.location.Location
+import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.work.*
 import com.rusertech.mobile.MainActivity
@@ -48,7 +51,6 @@ class TrackingService : Service() {
     private var identity: UserIdentity? = null
     private var collectJob: Job? = null
     private var authWatchJob: Job? = null
-    private var heartbeatJob: Job? = null
     private var lastBatteryAlert = 0L
     // Configuración operativa vigente: snapshot tomado al INICIAR el tracking
     // (remota del último login o defaults locales). Un cambio de configuración
@@ -65,6 +67,12 @@ class TrackingService : Service() {
     // (hasSpeed=false → speed 0.0) sin que el jitter de GPS estacionado
     // (que oscila alrededor del ancla, no se aleja) dispare falsos positivos.
     private var stopAnchor: Location? = null
+    // Último punto del episodio de movimiento EN CURSO. Sobrevive a la
+    // limpieza del ancla de parada: una vez iniciado el episodio (por señal
+    // fuerte), el desplazamiento contra este punto lo SOSTIENE aunque los
+    // fixes lleguen sin velocidad (hasSpeed=false, más de la mitad de un
+    // turno real). Null = no hay episodio de movimiento.
+    private var lastMovementPoint: Location? = null
     // Filtro de persistencia (antes vivía en LocationManager como filtro del
     // OS; ahora los puntos quietos SÍ llegan para la lógica de paradas, pero
     // no se persiste cada uno).
@@ -74,6 +82,9 @@ class TrackingService : Service() {
     companion object {
         const val ACTION_START = "com.rusertech.mobile.ACTION_START"
         const val ACTION_STOP = "com.rusertech.mobile.ACTION_STOP"
+        // Alarma exacta del heartbeat (única API que ejecuta en Doze).
+        const val ACTION_HEARTBEAT = "com.rusertech.mobile.ACTION_HEARTBEAT"
+        private const val HEARTBEAT_REQUEST_CODE = 2
         // I5: radio del episodio de parada. 50 m > jitter típico de GPS
         // estacionado (incluso con precisión de 50 m aceptada por el filtro),
         // y un vehículo en marcha lo cruza en segundos aun a paso de hombre.
@@ -105,7 +116,11 @@ class TrackingService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) { ACTION_START -> start(); ACTION_STOP -> stop() }
+        when (intent?.action) {
+            ACTION_START -> start()
+            ACTION_STOP -> stop()
+            ACTION_HEARTBEAT -> onHeartbeatAlarm()
+        }
         return START_STICKY
     }
 
@@ -137,11 +152,11 @@ class TrackingService : Service() {
             // reutilizarse entre start/stop). lastSavedAt arranca en "ahora":
             // es la línea base del reloj de silencio del heartbeat.
             vehicleStoppedSince = 0L; stopEventSent = false; movingSince = 0L
-            stopAnchor = null; lastSaved = null
+            stopAnchor = null; lastMovementPoint = null; lastSaved = null
             lastSavedAt = System.currentTimeMillis()
             _sessionDistanceM.value = 0f  // B4: distancia por sesión
             locationManager.startUpdates(config)
-            launchHeartbeat(startIdentity)
+            scheduleHeartbeatAlarm()
 
             locationManager.locations.collect { location ->
                 _lastLocation.value = location
@@ -159,7 +174,7 @@ class TrackingService : Service() {
                 val now = System.currentTimeMillis()
                 val moved = lastSaved?.let { it.distanceTo(location) >= config.minDisplacementMeters } ?: true
                 val shouldSave = moved ||
-                    location.speed >= LocationManager.SPEED_THRESHOLD_MS ||
+                    (location.hasSpeed() && location.speed >= LocationManager.SPEED_THRESHOLD_MS) ||
                     now - lastSavedAt >= config.intervalIdleMs
                 if (shouldSave) {
                     // B4: acumular distancia entre puntos persistidos consecutivos.
@@ -178,6 +193,9 @@ class TrackingService : Service() {
                     locationRepository.saveLocation(id, point)
                     lastSaved = location
                     lastSavedAt = now
+                    // Cada punto persistido corre la alarma del heartbeat:
+                    // semántica de reloj de silencio, no de tick ciego.
+                    scheduleHeartbeatAlarm()
                     updateNotification(point.speedKmh().toInt())
                 }
                 checkAutoEvents(location, id, currentTrip?.tripId)
@@ -231,16 +249,27 @@ class TrackingService : Service() {
                 metadata = mapOf("battery_level" to battery.toString()), tripId = tripId)
         }
 
-        // I5: decidir movimiento SOLO por velocidad rompía con fixes sin
-        // velocidad (hasSpeed=false → speed 0.0, típico de fixes de red):
-        // MOB_STOP falso en marcha y auto-resume que nunca disparaba.
-        // Criterio nuevo: velocidad ≥ umbral O alejarse del ancla de parada
-        // más que STOP_RADIUS_M. El ancla (fija en el inicio del episodio)
-        // amortigua el jitter: un vehículo estacionado oscila alrededor del
-        // ancla sin alejarse; uno circulando la deja atrás en segundos.
-        val fastEnough = location.speed >= LocationManager.SPEED_THRESHOLD_MS
+        // I5: la velocidad solo cuenta con hasSpeed() — sin esa verificación,
+        // un fix sin velocidad lee 0.0 y más de la mitad de los fixes de un
+        // turno real llegan así. Tres señales de movimiento:
+        //  1. velocidad VÁLIDA sobre umbral (inicia y sostiene episodio);
+        //  2. salir del radio del ancla de parada (inicia episodio — el
+        //     jitter estacionado oscila alrededor del ancla sin salir);
+        //  3. desplazamiento contra el último punto del episodio EN CURSO
+        //     (solo SOSTIENE: lastMovementPoint es null sin episodio, así
+        //     que el jitter estacionado no puede iniciar movimiento ni
+        //     bloquear el MOB_STOP). Sin esta tercera señal, el ancla se
+        //     limpia al primer fix en movimiento y los fixes sin velocidad
+        //     posteriores cortan el episodio: el contador continuo del
+        //     auto-resume se reinicia y los minutos no se completan nunca.
+        val fastEnough = location.hasSpeed() && location.speed >= LocationManager.SPEED_THRESHOLD_MS
         val leftStopRadius = stopAnchor?.let { it.distanceTo(location) > STOP_RADIUS_M } ?: false
-        val isMoving = fastEnough || leftStopRadius
+        val sustainedMovement = lastMovementPoint?.let {
+            it.distanceTo(location) >= config.minDisplacementMeters
+        } ?: false
+        val isMoving = fastEnough || leftStopRadius || sustainedMovement
+        // La referencia sobrevive a la limpieza del ancla y muere con el episodio.
+        lastMovementPoint = if (isMoving) location else null
         val driverState = DriverState.fromValue(userPreferences.driverStateSnapshot())
 
         if (!isMoving) {
@@ -288,31 +317,95 @@ class TrackingService : Service() {
      * heartbeatIntervalMinutes sin al menos un punto persistido).
      *
      * Con fixes fluyendo, el filtro de persistencia ya guarda al menos un
-     * punto por intervalo idle y este job nunca dispara. El heartbeat cubre
-     * el caso restante: ningún fix pasa el filtro de precisión durante
-     * minutos (interior, garaje, cañón urbano) y la plataforma dejaría de
-     * ver al vehículo sin saber si es señal o abandono. Se envía la última
-     * posición conocida marcada como heartbeat con la antigüedad del fix —
-     * el mismo patrón staleLocation de los eventos sin posición.
+     * punto por intervalo idle y la alarma se corre antes de disparar. El
+     * heartbeat cubre el caso restante: ningún fix pasa el filtro de
+     * precisión durante minutos (interior, garaje, cañón urbano) y la
+     * plataforma dejaría de ver al vehículo sin saber si es señal o abandono.
      *
-     * Lo que NO hace, a propósito: no pasa por checkAutoEvents (no dispara
-     * MOB_STOP ni toca DriverState), no suma distancia de sesión y no toca
-     * lastSaved (el filtro de desplazamiento sigue anclado al último fix
-     * REAL). Solo reinicia el reloj de silencio (lastSavedAt).
+     * POR QUÉ AlarmManager y no delay(): delay() no despierta el CPU. Con el
+     * teléfono quieto y la pantalla apagada, Doze suspende el procesador y
+     * el timer queda congelado hasta que el dispositivo despierte por otra
+     * razón — que es exactamente el escenario del heartbeat (conductor
+     * esperando en un depósito). El Foreground Service mantiene vivo el
+     * PROCESO, no impide la suspensión del CPU. setExactAndAllowWhileIdle es
+     * la única API con ejecución garantizada en Doze.
+     *
+     * Límites conocidos, NO son bugs:
+     *  - En Doze profundo el sistema limita las alarmas exactas a ~1 cada
+     *    9 minutos por app: con el default de 5 minutos, el intervalo real
+     *    puede estirarse hasta ese ritmo. Aceptable y muy superior a un
+     *    timer congelado.
+     *  - Sin el permiso SCHEDULE_EXACT_ALARM (revocable por el usuario en
+     *    Android 12+, denegado por defecto al instalar en 14+), se cae a
+     *    setAndAllowWhileIdle: inexacta pero también ejecuta en Doze, con
+     *    ventanas de batching del sistema.
+     *
+     * NO usar un wakelock permanente como alternativa: resolvería el timer a
+     * costa de la batería, y el consumo por hora medido en campo es una de
+     * las mejores cualidades del producto.
      */
-    private fun launchHeartbeat(id: UserIdentity) {
-        heartbeatJob?.cancel()
-        heartbeatJob = serviceScope.launch {
-            while (isActive) {
-                val wait = config.heartbeatIntervalMs - (System.currentTimeMillis() - lastSavedAt)
-                if (wait > 0) {
-                    delay(wait)
-                } else if (!emitHeartbeat(id)) {
-                    // Sin ninguna posición que reportar (instalación nueva que
-                    // jamás obtuvo un fix): esperar el intervalo completo en
-                    // vez de reintentar en loop.
-                    delay(config.heartbeatIntervalMs)
+    private fun heartbeatPendingIntent(): PendingIntent =
+        PendingIntent.getService(
+            this, HEARTBEAT_REQUEST_CODE,
+            Intent(this, TrackingService::class.java).apply { action = ACTION_HEARTBEAT },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+    /**
+     * (Re)programa la alarma para el próximo vencimiento del reloj de
+     * silencio. Mismo PendingIntent (mismo requestCode): cada set() PISA la
+     * alarma anterior — se llama después de cada punto persistido y de cada
+     * heartbeat, así la alarma solo dispara tras un intervalo completo SIN
+     * puntos.
+     */
+    private fun scheduleHeartbeatAlarm(fromMs: Long = lastSavedAt) {
+        // Piso de 1 s en el futuro: una base vieja (p. ej. sin posición que
+        // reportar) no puede producir una alarma que dispare en loop.
+        val at = maxOf(fromMs + config.heartbeatIntervalMs, System.currentTimeMillis() + 1_000L)
+        val am = getSystemService(AlarmManager::class.java)
+        val pi = heartbeatPendingIntent()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+        } else {
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+        }
+    }
+
+    private fun cancelHeartbeatAlarm() {
+        getSystemService(AlarmManager::class.java).cancel(heartbeatPendingIntent())
+    }
+
+    /**
+     * La alarma venció. Wakelock corto con timeout: la alarma despierta el
+     * CPU solo para entregar el intent, y sin sostenerlo unos segundos el
+     * Room insert / intento de envío podrían quedar suspendidos a mitad de
+     * camino. 30 s de tope — jamás un wakelock permanente.
+     */
+    private fun onHeartbeatAlarm() {
+        if (!_isRunning.value) {
+            // Alarma rezagada tras un stop (o el sistema recreó el servicio
+            // solo para entregarla): no hay nada que emitir ni reprogramar.
+            stopSelf()
+            return
+        }
+        val id = identity ?: return
+        val wl = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "rusertech:heartbeat")
+        wl.acquire(30_000L)
+        serviceScope.launch {
+            try {
+                val due = System.currentTimeMillis() - lastSavedAt >= config.heartbeatIntervalMs
+                if (due && !emitHeartbeat(id)) {
+                    // Sin ninguna posición que reportar (instalación que jamás
+                    // obtuvo un fix): próxima ventana completa desde ahora.
+                    scheduleHeartbeatAlarm(fromMs = System.currentTimeMillis())
+                } else {
+                    // emitHeartbeat corrió lastSavedAt; si no estaba vencida
+                    // (un punto llegó en el medio), se reprograma desde él.
+                    scheduleHeartbeatAlarm()
                 }
+            } finally {
+                if (wl.isHeld) wl.release()
             }
         }
     }
@@ -372,8 +465,17 @@ class TrackingService : Service() {
         // en dispositivos con almacenamiento lento (reproducido en campo).
         // Si hace falta garantía de ejecución, la respuesta es un scope que
         // sobreviva — nunca bloquear el main.
-        appScope.launch { userPreferences.setTracking(false) }
-        collectJob?.cancel(); authWatchJob?.cancel(); heartbeatJob?.cancel()
+        appScope.launch {
+            userPreferences.setTracking(false)
+            // Detener CIERRA la sesión de rastro: lo anterior a este instante
+            // deja de dibujarse en el mapa. Solo presentación local — los
+            // puntos ya enviados quedan en telemetry como histórico. Los
+            // reinicios del servicio (reboot, kill del OEM) no pasan por acá:
+            // el rastro de un turno sobrevive a esas muertes.
+            userPreferences.setTrailClearedAt(System.currentTimeMillis())
+        }
+        cancelHeartbeatAlarm()
+        collectJob?.cancel(); authWatchJob?.cancel()
         serviceScope.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
     }
@@ -381,6 +483,11 @@ class TrackingService : Service() {
     override fun onDestroy() {
         locationManager.stopUpdates()
         if (serviceScope.isActive) serviceScope.cancel()
+        // La alarma del heartbeat NO se cancela acá a propósito: onDestroy
+        // también corre cuando el sistema mata el servicio con el tracking
+        // vigente, y en ese caso la alarma pendiente es inofensiva (el
+        // handler la ignora y se auto-detiene si el tracking no corre).
+        // stop() —la detención deliberada— sí la cancela.
         _isRunning.value = false; _lastLocation.value = null
         super.onDestroy()
     }

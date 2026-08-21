@@ -66,6 +66,10 @@ fun TrackingScreen(
     var showLogoutDialog by remember { mutableStateOf(false) }
     // B6: al declarar parada sanitaria se pide el lugar (metadata).
     var showSanitaryOptions by remember { mutableStateOf(false) }
+    // Destino intermedio: referencia opcional en texto libre (metadata).
+    var showWaypointDialog by remember { mutableStateOf(false) }
+    // Detener el Tracking Libre cierra la sesión de rastro: se avisa antes.
+    var showEndFreeDialog by remember { mutableStateOf(false) }
     // B4: distancia acumulada de la sesión.
     val sessionDistanceM by viewModel.sessionDistanceM.collectAsStateWithLifecycle()
 
@@ -235,11 +239,13 @@ fun TrackingScreen(
                     Surface(
                         onClick = {
                             showStateSheet = false
-                            // B6: la parada sanitaria pide el lugar antes de declararse.
-                            if (state == DriverState.STOPPED_SANITARY) {
-                                showSanitaryOptions = true
-                            } else {
-                                viewModel.declareState(state)
+                            // B6: la parada sanitaria pide el lugar antes de
+                            // declararse; el destino intermedio ofrece una
+                            // referencia opcional en texto libre.
+                            when (state) {
+                                DriverState.STOPPED_SANITARY -> showSanitaryOptions = true
+                                DriverState.STOPPED_WAYPOINT -> showWaypointDialog = true
+                                else -> viewModel.declareState(state)
                             }
                         },
                         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
@@ -299,6 +305,89 @@ fun TrackingScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showSanitaryOptions = false }) {
+                    Text("Cancelar", color = TextMuted)
+                }
+            },
+            containerColor = DeepSpaceTop
+        )
+    }
+
+    // Destino intermedio: referencia opcional de hasta 40 caracteres que
+    // viaja en Meta ({"referencia":"Depósito Lugano"}). Si el conductor no
+    // escribe nada, el evento se registra igual sin metadata.
+    if (showWaypointDialog) {
+        var waypointRef by remember(showWaypointDialog) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showWaypointDialog = false },
+            title = { Text("Destino intermedio", color = TextPrimary, fontSize = 17.sp) },
+            text = {
+                Column {
+                    Text(
+                        "¿Alguna referencia del lugar? (opcional)",
+                        color = TextSecondary, fontSize = 13.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = waypointRef,
+                        onValueChange = { waypointRef = it.take(40) },
+                        placeholder = { Text("Ej.: Depósito Lugano", color = TextMuted, fontSize = 14.sp) },
+                        singleLine = true,
+                        supportingText = {
+                            Text("${waypointRef.length}/40", color = TextMuted, fontSize = 11.sp)
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = SurfaceInput,
+                            unfocusedContainerColor = SurfaceInput,
+                            unfocusedBorderColor = SurfaceBorder,
+                            focusedBorderColor = TechGlowCyan,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showWaypointDialog = false
+                    val ref = waypointRef.trim()
+                    viewModel.declareState(
+                        DriverState.STOPPED_WAYPOINT,
+                        metadata = if (ref.isNotBlank()) mapOf("referencia" to ref) else emptyMap()
+                    )
+                }) { Text("Registrar", color = TechGlowCyan, fontWeight = FontWeight.W600) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWaypointDialog = false }) {
+                    Text("Cancelar", color = TextMuted)
+                }
+            },
+            containerColor = DeepSpaceTop
+        )
+    }
+
+    // Detener el Tracking Libre = cerrar la sesión: el recorrido deja de
+    // mostrarse en el mapa (los datos ya enviados quedan en la plataforma).
+    if (showEndFreeDialog) {
+        AlertDialog(
+            onDismissRequest = { showEndFreeDialog = false },
+            title = { Text("Finalizar seguimiento", color = TextPrimary) },
+            text = {
+                Text(
+                    "Se cierra la sesión actual: el recorrido deja de mostrarse " +
+                        "en el mapa y el próximo seguimiento arranca limpio. " +
+                        "Los datos ya enviados quedan guardados en la plataforma.",
+                    color = TextSecondary, fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showEndFreeDialog = false
+                    viewModel.stopTracking()
+                }) { Text("Finalizar", color = SOSRed, fontWeight = FontWeight.W600) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEndFreeDialog = false }) {
                     Text("Cancelar", color = TextMuted)
                 }
             },
@@ -515,29 +604,32 @@ fun TrackingScreen(
                         )
                     }
                 }
+                // "Última posición": la dirección resuelta vive DENTRO de la
+                // caja de datos, debajo de la distancia — es parte de la
+                // información de la sesión, no un texto suelto. Si el
+                // geocoding no resolvió, coordenadas: el dato nunca
+                // desaparece por un fallo de red.
+                lastLocation?.let { loc ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                        Text("Última posición", fontSize = 13.sp, color = TextSecondary)
+                        Spacer(Modifier.height(2.dp))
+                        val address = currentAddress
+                        if (address != null) {
+                            Text(address, fontSize = 13.sp, color = TextPrimary)
+                        } else {
+                            Text(
+                                "${"%.6f".format(loc.latitude)}, ${"%.6f".format(loc.longitude)}",
+                                fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextPrimary
+                            )
+                        }
+                    }
+                }
                 if (pendingCount > 0) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), Arrangement.SpaceBetween) {
                         Text("Pendientes", fontSize = 13.sp, color = TextSecondary)
                         Text("$pendingCount", fontSize = 13.sp, color = WarningAmber)
                     }
                 }
-            }
-        }
-        lastLocation?.let { loc ->
-            Spacer(Modifier.height(8.dp))
-            Text("Ubicación actual", fontSize = 11.sp, color = TextMuted)
-            // Dirección legible si el geocoding la resolvió; si no,
-            // coordenadas — el dato nunca desaparece por un fallo de red.
-            val address = currentAddress
-            if (address != null) {
-                Text(
-                    address, fontSize = 12.sp, color = TextSecondary,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-            } else {
-                Text("${"%.6f".format(loc.latitude)}, ${"%.6f".format(loc.longitude)}",
-                    fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextMuted)
             }
         }
         Spacer(Modifier.weight(1f))
@@ -604,7 +696,8 @@ fun TrackingScreen(
                             permissionLauncher.launch(startPermissions)
                         }
                     }
-                    isTracking -> viewModel.stopTracking()
+                    // Detener el Tracking Libre cierra la sesión: se confirma.
+                    isTracking -> showEndFreeDialog = true
                     else -> permissionLauncher.launch(startPermissions)
                 }
             },

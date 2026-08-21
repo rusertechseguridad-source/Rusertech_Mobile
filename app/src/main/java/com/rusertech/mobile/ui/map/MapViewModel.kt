@@ -71,7 +71,7 @@ class MapViewModel @Inject constructor(
     private val _showTrail = MutableStateFlow(true)
     val showTrail = _showTrail.asStateFlow()
 
-    private val _trailPoints = MutableStateFlow<List<GeoPoint>>(emptyList())
+    private val _trailPoints = MutableStateFlow<List<TrailPoint>>(emptyList())
     val trailPoints = _trailPoints.asStateFlow()
 
     private val _trailEvents = MutableStateFlow<List<EventEntity>>(emptyList())
@@ -85,12 +85,18 @@ class MapViewModel @Inject constructor(
     /**
      * Carga el rastro: desde el inicio del viaje activo si lo hay, o las
      * últimas 12 h de puntos (Room los retiene 24 h tras sincronizar).
+     * El cierre de sesión manda sobre ambos: nada anterior al último
+     * "Finalizar seguimiento" se dibuja — la sesión nueva arranca limpia.
+     * Solo presentación: los puntos ya enviados siguen en el servidor.
      */
     fun loadTrail() {
         viewModelScope.launch {
             val trip = prefs.activeTrip.first()
-            val since = trip?.startedAt ?: (System.currentTimeMillis() - 12 * 3_600_000L)
-            _trailPoints.value = locationDao.getTrackSince(since).map { GeoPoint(it.latitude, it.longitude) }
+            val cleared = prefs.trailClearedAt.first()
+            val base = trip?.startedAt ?: (System.currentTimeMillis() - 12 * 3_600_000L)
+            val since = maxOf(base, cleared)
+            _trailPoints.value = locationDao.getTrackSince(since)
+                .map { TrailPoint(GeoPoint(it.latitude, it.longitude), it.timestamp) }
             _trailEvents.value = eventDao.getEventsSince(since)
         }
     }
@@ -121,8 +127,8 @@ class MapViewModel @Inject constructor(
         // B3: el rastro crece en vivo mientras la pantalla está abierta
         // (los puntos nuevos aún no están consultados de Room).
         val last = _trailPoints.value.lastOrNull()
-        if (last == null || last.distanceToAsDouble(point) >= 10.0) {
-            _trailPoints.value = _trailPoints.value + point
+        if (last == null || last.point.distanceToAsDouble(point) >= 10.0) {
+            _trailPoints.value = _trailPoints.value + TrailPoint(point, System.currentTimeMillis())
         }
         if (_destination.value != null && _routePoints.value.isEmpty()) {
             calculateRoute()
@@ -177,6 +183,9 @@ class MapViewModel @Inject constructor(
             }
         }
     }
+
+    /** Punto del rastro con su instante: el mapa muestra fecha/hora por tramo. */
+    data class TrailPoint(val point: GeoPoint, val timestamp: Long)
 
     private fun decodePolyline(encoded: String): List<GeoPoint> {
         val poly = ArrayList<GeoPoint>()

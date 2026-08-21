@@ -192,7 +192,17 @@ class TrackingViewModel @Inject constructor(
                     ?.let { a ->
                         val street = listOfNotNull(a.thoroughfare, a.subThoroughfare)
                             .joinToString(" ").ifBlank { null }
-                        listOfNotNull(street, a.subLocality, a.locality)
+                        // País solo en cruce de frontera: en operación
+                        // doméstica es ruido permanente; fuera del país del
+                        // tenant (bloque MARCA de strings.xml) es el dato
+                        // más importante de la dirección.
+                        val tenantCountry = context
+                            .getString(com.rusertech.mobile.R.string.tenant_country_code)
+                            .trim()
+                        val country = a.countryCode
+                            ?.takeIf { tenantCountry.isNotBlank() && !it.equals(tenantCountry, ignoreCase = true) }
+                            ?.let { a.countryName ?: it }
+                        listOfNotNull(street, a.subLocality, a.locality, country)
                             .distinct().joinToString(", ").ifBlank { null }
                             ?: a.getAddressLine(0)
                     }

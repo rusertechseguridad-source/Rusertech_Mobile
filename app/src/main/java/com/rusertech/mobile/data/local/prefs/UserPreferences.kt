@@ -43,6 +43,9 @@ class UserPreferences @Inject constructor(
         val DRIVER_STATE = stringPreferencesKey("driver_state")
         // I7: el conductor pidió no volver a ver el diálogo de configuración OEM.
         val OEM_SETUP_DISMISSED = booleanPreferencesKey("oem_setup_dismissed")
+        // Cierre de sesión de rastro: al detener el tracking, el mapa deja de
+        // dibujar todo lo anterior a este instante. Solo presentación local.
+        val TRAIL_CLEARED_AT = androidx.datastore.preferences.core.longPreferencesKey("trail_cleared_at")
         // Configuración operativa remota (llega en el login, por tenant).
         // Solo se guardan los valores que el backend envió; lo ausente se
         // resuelve con los defaults de OperationalConfig al leer.
@@ -155,6 +158,18 @@ class UserPreferences @Inject constructor(
 
     suspend fun setOemSetupDismissed() {
         context.dataStore.edit { it[Keys.OEM_SETUP_DISMISSED] = true }
+    }
+
+    // ------------------------------------------------------------------
+    // Cierre de sesión de rastro
+    // ------------------------------------------------------------------
+
+    /** Instante del último cierre de sesión de rastro (0 = nunca se cerró). */
+    val trailClearedAt: Flow<Long> =
+        context.dataStore.data.map { it[Keys.TRAIL_CLEARED_AT] ?: 0L }
+
+    suspend fun setTrailClearedAt(timestamp: Long) {
+        context.dataStore.edit { it[Keys.TRAIL_CLEARED_AT] = timestamp }
     }
 
     // ------------------------------------------------------------------

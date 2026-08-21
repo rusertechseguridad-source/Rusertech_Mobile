@@ -15,7 +15,7 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 fun eventSubtype(metadataJson: String): String? = runCatching {
     val obj = Json.parseToJsonElement(metadataJson).jsonObject
-    listOf("categoria", "tipo", "lugar").firstNotNullOfOrNull { key ->
+    listOf("categoria", "tipo", "lugar", "referencia").firstNotNullOfOrNull { key ->
         obj[key]?.jsonPrimitive?.content
     }?.replaceFirstChar(Char::uppercase)
 }.getOrNull()

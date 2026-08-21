@@ -37,6 +37,9 @@ import com.rusertech.mobile.domain.model.EventType
 import com.rusertech.mobile.ui.theme.*
 import com.rusertech.mobile.service.TrackingService
 import com.rusertech.mobile.util.eventSubtype
+import org.osmdroid.events.MapListener
+import org.osmdroid.events.ScrollEvent
+import org.osmdroid.events.ZoomEvent
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -48,6 +51,19 @@ import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 // Espaciado de las flechas de sentido sobre el rastro, en metros de recorrido.
 // Una flecha por punto satura el mapa; cada ~150 m se lee el sentido sin ruido.
 private const val TRAIL_ARROW_SPACING_M = 150.0
+
+// Por debajo de este zoom el círculo de precisión no se dibuja: sus píxeles
+// cubren cientos de metros y el conjunto se lee como un ícono corrido de su
+// posición real.
+private const val MIN_ZOOM_FOR_ACCURACY_CIRCLE = 13.0
+
+// Suavizado del trazo: subdivisiones por tramo, y largo máximo de tramo a
+// suavizar (más largo = hueco de señal: se dibuja recto, no se inventa curva).
+private const val TRAIL_SMOOTH_SAMPLES = 4
+private const val TRAIL_SMOOTH_MAX_SEGMENT_M = 200.0
+// Techo de puntos para suavizar: por encima, el trazo se dibuja crudo (la
+// multiplicación de vértices degradaría el render del mapa).
+private const val TRAIL_SMOOTH_MAX_POINTS = 3000
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -147,6 +163,27 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                             // setters separados vigentes.
                             locationOverlay.setPersonIcon(personBmp)
                             locationOverlay.setDirectionIcon(arrowBmp)
+                            // El hotspot por defecto del overlay corresponde
+                            // al bitmap de persona de osmdroid (ancla fuera
+                            // del centro). Con un ícono propio 48×48 centrado,
+                            // sin esta corrección el dibujo queda corrido de
+                            // la posición real — y el corrimiento, fijo en
+                            // píxeles, se vuelve evidente al alejar el zoom.
+                            locationOverlay.setPersonHotspot(24f, 24f)
+
+                            // Círculo de precisión solo con zoom cercano: a
+                            // zoom bajo sus píxeles cubren cientos de metros
+                            // y confunden más de lo que informan.
+                            locationOverlay.isDrawAccuracyEnabled =
+                                zoomLevelDouble >= MIN_ZOOM_FOR_ACCURACY_CIRCLE
+                            addMapListener(object : MapListener {
+                                override fun onZoom(event: ZoomEvent?): Boolean {
+                                    locationOverlay.isDrawAccuracyEnabled =
+                                        (event?.zoomLevel ?: 0.0) >= MIN_ZOOM_FOR_ACCURACY_CIRCLE
+                                    return false
+                                }
+                                override fun onScroll(event: ScrollEvent?): Boolean = false
+                            })
 
                             overlays.add(locationOverlay)
                         }
@@ -169,54 +206,66 @@ fun MapScreen(onBack: () -> Unit, viewModel: MapViewModel = hiltViewModel()) {
                         // eventos y flechas de sentido.
                         if (showTrail && trailPoints.size > 1) {
                             val trail = Polyline(map)
-                            trail.setPoints(trailPoints)
+                            // El TRAZO usa la geometría suavizada (solo
+                            // presentación); flechas y marcadores usan los
+                            // puntos CRUDOS: el recorrido es evidencia.
+                            trail.setPoints(smoothTrail(trailPoints.map { it.point }))
                             trail.outlinePaint.color = DeepSpaceTop.toArgb()
                             trail.outlinePaint.strokeWidth = 8f
                             trail.infoWindow = null
                             map.overlays.add(trail)
 
                             // Flechas de sentido de circulación, espaciadas por
-                            // distancia recorrida.
+                            // distancia recorrida. Al tocarlas muestran la
+                            // fecha/hora del tramo, como los eventos.
                             val arrowIcon = android.graphics.drawable.BitmapDrawable(
                                 map.context.resources, trailArrowBitmap()
                             )
                             var sinceArrowM = 0.0
                             for (i in 1 until trailPoints.size) {
-                                sinceArrowM += trailPoints[i - 1].distanceToAsDouble(trailPoints[i])
+                                sinceArrowM += trailPoints[i - 1].point.distanceToAsDouble(trailPoints[i].point)
                                 if (sinceArrowM >= TRAIL_ARROW_SPACING_M) {
                                     sinceArrowM = 0.0
                                     val arrow = Marker(map)
-                                    arrow.position = trailPoints[i]
+                                    arrow.position = trailPoints[i].point
                                     arrow.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                                     arrow.icon = arrowIcon
                                     // bearingTo devuelve grados horarios desde el
                                     // norte; Marker.rotation gira antihorario →
                                     // signo invertido. Si en dispositivo las
                                     // flechas apuntan espejadas, es este signo.
-                                    arrow.rotation = -trailPoints[i - 1].bearingTo(trailPoints[i]).toFloat()
-                                    arrow.setInfoWindow(null)
+                                    arrow.rotation = -trailPoints[i - 1].point.bearingTo(trailPoints[i].point).toFloat()
+                                    arrow.title = "Sentido de marcha"
+                                    arrow.snippet = formatEventTime(trailPoints[i].timestamp)
+                                    arrow.infoWindow = popup
                                     map.overlays.add(arrow)
                                 }
                             }
 
-                            // Inicio del rastro y última posición registrada.
+                            // Inicio del rastro y última posición registrada,
+                            // cada uno con su fecha/hora.
                             val start = Marker(map)
-                            start.position = trailPoints.first()
+                            start.position = trailPoints.first().point
                             start.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                             start.icon = android.graphics.drawable.BitmapDrawable(
                                 map.context.resources, trailStartBitmap()
                             )
                             start.title = "Inicio del recorrido"
+                            start.snippet = formatEventTime(trailPoints.first().timestamp)
                             start.infoWindow = popup
                             map.overlays.add(start)
 
                             val last = Marker(map)
-                            last.position = trailPoints.last()
+                            last.position = trailPoints.last().point
                             last.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                             last.icon = android.graphics.drawable.BitmapDrawable(
                                 map.context.resources, trailLastBitmap()
                             )
                             last.title = "Última posición"
+                            last.snippet = formatEventTime(trailPoints.last().timestamp)
+                            // Tercera línea del popup: destaca que este es el
+                            // dato más reciente, no un marcador más.
+                            last.subDescription = "El punto más reciente del recorrido"
                             last.infoWindow = popup
                             map.overlays.add(last)
                         }
@@ -494,3 +543,52 @@ private fun formatEventTime(timestamp: Long): String =
     java.time.Instant.ofEpochMilli(timestamp)
         .atZone(java.time.ZoneId.systemDefault())
         .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy · HH:mm"))
+
+/**
+ * Suavizado Catmull-Rom del trazo — SOLO presentación, nunca dato. En un
+ * producto de custodia el recorrido es evidencia: los puntos crudos no se
+ * alteran (la curva PASA por todos ellos — t=1 devuelve exactamente el nodo
+ * siguiente), las flechas y los marcadores usan las posiciones crudas, y a
+ * Room/servidor no llega nada de esto. Sin map matching contra calles.
+ *
+ * Tramos más largos que TRAIL_SMOOTH_MAX_SEGMENT_M (huecos de señal) se
+ * dibujan rectos: inventar una curva ahí sería inventar recorrido. Por
+ * encima de TRAIL_SMOOTH_MAX_POINTS se dibuja crudo (rendimiento).
+ */
+private fun smoothTrail(points: List<GeoPoint>): List<GeoPoint> {
+    if (points.size < 3 || points.size > TRAIL_SMOOTH_MAX_POINTS) return points
+    val out = ArrayList<GeoPoint>(points.size * TRAIL_SMOOTH_SAMPLES + 1)
+    out.add(points.first())
+    for (i in 0 until points.size - 1) {
+        val p1 = points[i]
+        val p2 = points[i + 1]
+        if (p1.distanceToAsDouble(p2) > TRAIL_SMOOTH_MAX_SEGMENT_M) {
+            out.add(p2)
+            continue
+        }
+        // Extremos duplicados en los bordes de la lista (spline local).
+        val p0 = points.getOrElse(i - 1) { p1 }
+        val p3 = points.getOrElse(i + 2) { p2 }
+        for (s in 1..TRAIL_SMOOTH_SAMPLES) {
+            val t = s.toDouble() / TRAIL_SMOOTH_SAMPLES
+            out.add(
+                GeoPoint(
+                    catmullRom(p0.latitude, p1.latitude, p2.latitude, p3.latitude, t),
+                    catmullRom(p0.longitude, p1.longitude, p2.longitude, p3.longitude, t)
+                )
+            )
+        }
+    }
+    return out
+}
+
+/** Interpolación Catmull-Rom clásica (tensión 0.5) en una dimensión. */
+private fun catmullRom(v0: Double, v1: Double, v2: Double, v3: Double, t: Double): Double {
+    val t2 = t * t
+    val t3 = t2 * t
+    return 0.5 * (
+        (2 * v1) + (-v0 + v2) * t +
+            (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 +
+            (-v0 + 3 * v1 - 3 * v2 + v3) * t3
+        )
+}
